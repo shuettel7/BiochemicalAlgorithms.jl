@@ -1,4 +1,4 @@
-export Bond, BondOrder, BondOrderType
+export Bond, BondOrder, BondOrderType, BondShortOrder, BondShortOrderType
 
 using EnumX
 
@@ -17,3 +17,14 @@ const Bond = @NamedTuple begin
     a2::Int
     order::BondOrderType
 end
+
+
+@enumx BondShortOrder begin
+    sb = 1
+    db = 2
+    tb = 3 
+    qb = 4
+    un = 100
+end
+
+const BondShortOrderType = BondShortOrder.T
