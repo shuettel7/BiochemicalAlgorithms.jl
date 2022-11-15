@@ -9,11 +9,12 @@
     @test mol.atoms isa DataFrame
     @test size(mol.atoms) == (0, 14)
     @test mol.bonds isa DataFrame
-    @test size(mol.bonds) == (0, 3)
+    @test size(mol.bonds) == (0, 4)
     @test mol.chains isa Vector{PDBChain}
     @test size(mol.chains, 1) == 0
     @test count_atoms(mol) == 0
     @test count_bonds(mol) == 0
+    @test length(mol.properties) == 0
 end  
 
 @testset "Filled PDBMolecule" begin
@@ -51,6 +52,15 @@ end
     push!(mol.chains, chain_B)
     @test size(mol.chains, 1) == 2
     @test mol.chains[1] isa PDBChain
+
+    # test properties
+    mol.properties = Properties([("molecule computed", false), ("molecule resolution", 2.5)])
+    @test length(mol.properties) == 2
+
+    mol.properties["resolution unit"] = "Angstroem"
+    @test length(mol.properties) == 3
+    @test !mol.properties["molecule computed"]
+    @test haskey(mol.properties, "resolution unit")
 
 end
 
