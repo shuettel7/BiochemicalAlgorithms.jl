@@ -23,4 +23,5 @@ const Bond = @NamedTuple begin
     a1::Int
     a2::Int
     order::BondOrderType
+    properties::Properties
 end
