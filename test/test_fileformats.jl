@@ -63,5 +63,4 @@ end
         @test readlines("data/Export_test_molecule_6dny.mol2")[74] == "@<TRIPOS>SUBSTRUCTURE"
 
         rm("data/Export_test_molecule_6dny.mol2")
-
 end
