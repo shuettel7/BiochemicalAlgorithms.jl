@@ -13,6 +13,8 @@ include("core/residue.jl")
 include("core/fragment.jl")
 include("core/nucleotide.jl")
 include("core/protein.jl")
+include("validation/validation_script.jl")
+include("validation/atomtypes_dict_script.jl")
 
 
 module PubChem
