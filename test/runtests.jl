@@ -19,4 +19,7 @@ using Test
         include("test_residue.jl")
         include("test_types.jl")
     end
+    @testset "Atomtyping" begin
+        include("test_atomtyping.jl")
+    end
 end
