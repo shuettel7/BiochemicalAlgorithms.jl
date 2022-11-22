@@ -21,8 +21,8 @@ jobs:
         version:
           - '1.7'
           - '1.8'
-          # Broken by dependency, cf. https://github.com/JuliaIO/JLD2.jl/issues/428
-          # - 'nightly'
+          - '1.9-nightly'
+          - 'nightly'
         os:
           - ubuntu-latest
         arch:
