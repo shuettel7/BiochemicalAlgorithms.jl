@@ -21,5 +21,6 @@ using Test
     end
     @testset "Atomtyping" begin
         include("test_preprocessing.jl")
+        include("test_atomtyping.jl")
     end
 end
