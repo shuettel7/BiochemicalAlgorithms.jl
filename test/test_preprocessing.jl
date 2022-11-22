@@ -23,5 +23,4 @@ end
     for i = (1:nrow(mol.bonds))
         @test !haskey(mol.bonds.properties[i], "TRIPOS_tag")
     end
-    
 end
