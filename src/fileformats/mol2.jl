@@ -4,17 +4,16 @@ export load_mol2, export_mol2
 
 
 function load_mol2(fname::AbstractString, T = Float32)
+    # For validation of small molecules only: no <TRIPOS>SUBSTRUCTURES import implemented
     if fname[lastindex(fname)-4:lastindex(fname)] != ".mol2"
         println("Please make sure, you are loading a mol2 file!\n(file ending should be mol2)")
         return
     end
-    mol2_file = open(fname)
     new_mol = Molecule(fname)
     section = ""
     section_line = 0
 
-    for (i, line) in enumerate(readlines(mol2_file))
-        println(line)
+    for (i, line) in enumerate(readlines(fname))
         if !isempty(line)
             if line[1] == '@'
                 section = string(line)
@@ -30,34 +29,37 @@ function load_mol2(fname::AbstractString, T = Float32)
         elseif section == "@<TRIPOS>ATOM"
             section_line += 1
             line_elements = split(line)
-            number = parse(Int64, line_elements[1])
-            name = line_elements[2]
-            element = parse(Elements, mol2_get_element(name))
-            atomtype = line_elements[6]
-            r = Vector3{T}(parse(T, line_elements[3]), parse(T, line_elements[4]), parse(T, line_elements[5]))
-            v = Vector3{T}(0.0, 0.0, 0.0)
-            F = Vector3{T}(0.0, 0.0, 0.0)
-            has_velocity = false
-            has_force = false
-            frame_id = 1
-            new_atom = (number = number, name = name, element = element, atomtype = atomtype, r = r, 
-                        v = v, F = F, has_velocity = has_velocity, has_force = has_force, frame_id = frame_id)
+            new_atom = (number = parse(Int64, line_elements[1]), 
+                        name = line_elements[2], 
+                        element = parse(Elements, mol2_get_element(line_elements[2])), 
+                        atomtype = line_elements[6], 
+                        r = Vector3{T}(parse(T, line_elements[3]), parse(T, line_elements[4]), parse(T, line_elements[5])), 
+                        v = Vector3{T}(0.0, 0.0, 0.0), F = Vector3{T}(0.0, 0.0, 0.0), 
+                        has_velocity = false, has_force = false, frame_id = parse(Int64, line_elements[7]),
+                        properties = Dict{String, Any}("Charge" => parse(T, line_elements[9]), "Chain" => string(line_elements[8])))
             push!(new_mol.atoms, new_atom)
         elseif section == "@<TRIPOS>BOND"
             section_line += 1
             line_elements = split(line)
+            order_ = BondOrderType(mol2_get_BondOrder(line_elements[4]))
+            properties_dict = Dict{String, Any}()
+            if order_ == BondOrder.Unknown && line_elements[4] == "ar" || 
+                order_ == BondOrder.Single && line_elements[4] == "am"
+                properties_dict["TRIPOS_tag"] = line_elements[4]
+            end
             new_bond = (a1 = parse(Int64, line_elements[2]),
                         a2 = parse(Int64, line_elements[3]),
-                        order = BondOrderType(mol2_get_BondOrder(line_elements[4])))
+                        order = order_, 
+                        properties = properties_dict)
             push!(new_mol.bonds, new_bond)
         end
-        ### TODO: import information from @<TRIPOS>SUBSTRUCTURE if given, change Molecule into PDBMolecule
     end
     return new_mol
 end
 
 
 function export_mol2(mol::AbstractMolecule, filelocation::AbstractString)
+    # For validation of small molecules only: no <TRIPOS>SUBSTRUCTURES export implemented
     mol_name = prepare_mol_name(mol.name)
     export_file = open(string(filelocation, mol_name, ".mol2") , "w")
     
@@ -77,11 +79,17 @@ function export_mol2(mol::AbstractMolecule, filelocation::AbstractString)
     molecule_section_line2 = string(num_atoms, num_bonds, num_subst, num_feat, num_sets, "\n")
 
     mol_type = "SMALL" # BIOPOLYMER, PROTEIN, NUCLEIC_ACID, SACCHARIDE possible according to Tripos mol2 specification pdf
+    if haskey(mol.properties, "Type")
+        mol_type = mol.properties["Type"]
+    end
     molecule_section_line3 = string(mol_type, "\n")
 
     charge_type = "NO_CHARGES" # DEL_RE, GASTEIGER, GAST_HUCK, HUCKEL, PULLMAN, 
     # GAUSS80_CHARGES, AMPAC_CHARGES, MULLIKEN_CHARGES, DICT_ CHARGES, MMFF94_CHARGES, USER_CHARGES
     # possible according to Tripos mol2 specification
+    if haskey(mol.properties, "Charge_Type")
+        mol_type = mol.properties["Charge_Type"]
+    end
     molecule_section_line4 = string(charge_type, "\n")
 
     status_bits = "\n"
@@ -116,7 +124,10 @@ function export_mol2(mol::AbstractMolecule, filelocation::AbstractString)
                 subst_name = build_flush_left_string(mol.atoms.residue_name[i], 6)
             end
         end
-        charge = build_Float32_string(0.0, 12, 6)
+        charge = build_Float32_string(0.0, 10, 4)
+        if haskey(mol.atoms.properties[i], "Charge")
+            charge = build_Float32_string(mol.atoms.properties[i]["Charge"], 10, 4)
+        end
         # status_bits never set by user, DSPMOD, TYPECOL, CAP, BACKBONE, DICT, ESSENTIAL, 
         # WATER and DIRECT are possible according to Tripos mol2 specification
         atom_section_line = string(atom_id, atom_name, x_coordinate_string, 
@@ -134,40 +145,13 @@ function export_mol2(mol::AbstractMolecule, filelocation::AbstractString)
             origin_atom_id = build_flush_right_string(mol.bonds.a1[i], 6)
             target_atom_id = build_flush_right_string(mol.bonds.a2[i], 6)
             bond_type = string(" ", build_flush_left_string(Int(mol.bonds.order[i]), 4))
+            if haskey(mol.bonds.properties[i], "TRIPOS_tag")
+                bond_type = string(" ", build_flush_left_string(mol.bonds.properties[i]["TRIPOS_tag"], 4))
+            end
             # status_bits never set by user, TYPECOL, GROUP, CAP, BACKBONE, DICT and INTERRES 
             # are possible according to Tripos mol2 specification
             bond_section_line = string(bond_id, origin_atom_id, target_atom_id, bond_type, "\n")
             write(export_file, bond_section_line)
-        end
-    end
-
-    ### Substructure section
-    if typeof(mol) == PDBMolecule{Float32} && !isempty(mol.chains[1].fragments)
-        write(export_file, "@<TRIPOS>SUBSTRUCTURE\n")
-        for i = (1:nrow(mol.chains[1].fragments))
-            subst_id = string(build_flush_right_string(i, 6), " ")
-            subst_name = build_flush_left_string(mol.chains[1].fragments.name[i], 6)
-            df_for_root = filter(:residue_name => n -> n == mol.chains[1].fragments.name[i], mol.atoms)
-            df_for_root1 = filter(:residue_id => m -> m == mol.chains[1].fragments.number[i], df_for_root)
-            root_atom = string(build_flush_right_string(-1, 7), " ")
-            if !isempty(df_for_root1)
-                root_atom = string(build_flush_right_string(df_for_root1.number[1], 7), " ")
-            end  
-            subst_type = build_flush_left_string("TEMP", 7)
-            # other Options for subst_type should be. RESIDUE, PERM, DOMAIN, GROUP
-            dict_type = string(" ", build_flush_left_string(0, 4)) # the type of dictionary associated with the substructure.
-            chain_string = "" # the chain to which the substructure belongs (ð 4 chars).
-            sub_type = "" # the subtype of the chain
-            inter_bonds = "" # the number of inter substructure bonds
-            status_string = "" 
-            # status_string are internal SYBYL status bits never set by user
-            # Valid bit values: LEAF, ROOT, TYPECOL, DICT, BACKWARD and BLOCK 
-            # are possible according to Tripos mol2 specification
-            comment_string = "" # the comment for the substructure
-            substructure_section_line = string(subst_id, subst_name, root_atom, subst_type, 
-                                                dict_type, chain_string, sub_type, inter_bonds, 
-                                                status_string, comment_string, "\n")
-            write(export_file, substructure_section_line)
         end
     end
 
@@ -222,9 +206,13 @@ end
 
 function mol2_get_BondOrder(substring::AbstractString)
     if isnumeric(substring[1])
-        return Int(DefBond(parse(Int64, substring)))
+        return Int(BondShortOrderType(parse(Int64, substring)))
+    elseif isdefined(BondShortOrder, Symbol(substring))
+        return Int(getproperty(BondShortOrder, Symbol(substring)))
+    elseif substring == "am"
+        return Int(BondOrder.Single)
     else
-        return Int(parse(DefBonds, substring))
+        return Int(BondOrder.Unknown)
     end
 end
 

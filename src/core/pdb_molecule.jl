@@ -8,21 +8,21 @@ mutable struct PDBMolecule{T<:Real} <: AbstractMolecule{T}
     atoms::DataFrame
     bonds::DataFrame
 
-    atom_properties::Dict{Int, AtomProperties} # mapping of atom.number => properties
-
     chains::Vector{PDBChain}
+
+    properties::Properties
 
     function PDBMolecule{T}(name = "",
                         atoms = DataFrame(PDBAtom{T}[]),
                         bonds = DataFrame(Bond[]),
-                        atom_properties=Dict{Int, AtomProperties}(),
-                        chains = PDBChain[]) where {T<:Real}
-        new(name, atoms, bonds, atom_properties, chains)
+                        chains = PDBChain[],
+                        properties = Properties()) where {T<:Real}
+        new(name, atoms, bonds, chains, properties)
     end
 end
 
-PDBMolecule(name="",
-        atoms=DataFrame(PDBAtom{Float32}[]),
-        bonds=DataFrame(Bond[]),
-        atom_properties=Dict{Int, AtomProperties}(),
-        chains=PDBChain[]) = PDBMolecule{Float32}(name, atoms, bonds, atom_properties, chains)
+PDBMolecule(name = "",
+        atoms = DataFrame(PDBAtom{Float32}[]),
+        bonds = DataFrame(Bond[]),
+        chains = PDBChain[],
+        properties = Properties()) = PDBMolecule{Float32}(name, atoms, bonds, chains, properties)
