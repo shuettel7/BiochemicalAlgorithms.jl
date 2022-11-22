@@ -14,11 +14,13 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 
     # Cycle detection and list
     mol.properties["chem_cycle_list"] = chem_cycle_list = cycle_basis(mol_graph)
-    mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_list)
+    ring_intersections_matrix = Matrix{Vector{Int64}}(undef, lastindex(chem_cycle_list), lastindex(chem_cycle_list))
+    if lastindex(chem_cycle_list) > 1
+        mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_list)
+    end
     mol.properties["ring_class_list"] = ring_class_list = aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
 
-    ### Assign properties to Atoms 
-    ### TODO: Bonds, when properties are introduced to Bond NamedTuple (e.g. adding ar for aromatic, am for amide)
+    ### Assign properties to Atoms and Bonds
     for (j, sublist) in enumerate(chem_cycle_list)
         for (k, sublitem) in enumerate(sublist)
             ### assign "ar" property in mol.bonds.properties["TRIPOS_tag] position of Dictionary
@@ -54,9 +56,19 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     ElemWNeighbourCount_vector = Vector{String}()
     for i = (1:nrow(mol.atoms))
         mol.atoms.properties[i]["ElementWithNeighbourCount"] = ElemWNeighbourCount = string(enumToString(mol.atoms.element[i]), lastindex(neighbors(mol_graph, i)))
+        mol.atoms.properties[i]["Neighbors"] = AtomNeighbors = neighbors(mol_graph, i)
+        mol.atoms.properties[i]["Secondary_Neighbors"] = Vector{Vector{Int}}()
+        for (k, neigh) in enumerate(AtomNeighbors)
+            append!(mol.atoms.properties[i]["Secondary_Neighbors"], [[]])
+            for sec_neigh in neighbors(mol_graph, neigh)
+                if sec_neigh != i
+                    push!(mol.atoms.properties[i]["Secondary_Neighbors"][k], sec_neigh)
+                end
+            end
+        end
         push!(ElemWNeighbourCount_vector, ElemWNeighbourCount)
         mol.atoms.properties[i]["AromaticityType"] = mol.properties["ring_class_list"][i]
-        for l in values(countmap(adjacency_matrix(mol.properties["mol_weighted_graph"])[i, neighbors(mol.properties["mol_weighted_graph"], i)]))
+        for l in values(countmap(wgraph_adj_matrix[i, neighbors(mol.properties["mol_weighted_graph"], i)]))
             if !haskey(mol.atoms.properties[i], "BondTypes")
                 mol.atoms.properties[i]["BondTypes"] = [enumToString(BondShortOrderType(l))]
             elseif !all(in(mol.atoms.properties[i]["BondTypes"]).([enumToString(BondShortOrderType(l))]))
@@ -75,6 +87,8 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
                 mol.bonds[(mol.bonds[!,:a1] .== atompair[2]) .& (mol.bonds[!,:a2] .== atompair[1]),:properties][1]["TRIPOS_tag"] = "am"
             end
         end
+    else
+        delete!(mol.properties, "Amide_tag_list")
     end
     
 end
@@ -96,16 +110,28 @@ end
 
 function ClearPreprocessingMolecule!(mol::AbstractMolecule)
     if haskey(mol.properties, "mol_graph")
-        delete!(mol.properties[i], "mol_graph")
+        delete!(mol.properties, "mol_graph")
     end
     if haskey(mol.properties, "adjacency_matrix")
-        delete!(mol.properties[i], "adjacency_matrix")
+        delete!(mol.properties, "adjacency_matrix")
     end
     if haskey(mol.properties, "mol_weighted_graph")
-        delete!(mol.properties[i], "mol_weighted_graph")
+        delete!(mol.properties, "mol_weighted_graph")
     end
     if haskey(mol.properties, "weighted_graph_adj_matrix")
-        delete!(mol.properties[i], "weighted_graph_adj_matrix")
+        delete!(mol.properties, "weighted_graph_adj_matrix")
+    end
+    if haskey(mol.properties, "chem_cycle_list")
+        delete!(mol.properties, "chem_cycle_list")
+    end
+    if haskey(mol.properties, "ring_intersections_matrix")
+        delete!(mol.properties, "ring_intersections_matrix")
+    end
+    if haskey(mol.properties, "ring_class_list")
+        delete!(mol.properties, "ring_class_list")
+    end
+    if haskey(mol.properties, "Amide_tag_list")
+        delete!(mol.properties, "Amide_tag_list")
     end
     for i = (1:nrow(mol.atoms))
         if haskey(mol.atoms.properties[i], "CycleListNum")
@@ -120,6 +146,12 @@ function ClearPreprocessingMolecule!(mol::AbstractMolecule)
         end
         if haskey(mol.atoms.properties[i], "BondTypes")
             delete!(mol.atoms.properties[i], "BondTypes")
+        end
+        if haskey(mol.atoms.properties[i], "Neighbors")
+            delete!(mol.atoms.properties[i], "Neighbors")
+        end
+        if haskey(mol.atoms.properties[i], "Secondary_Neighbors")
+            delete!(mol.atoms.properties[i], "Secondary_Neighbors")
         end
     end
     for i = (1:nrow(mol.bonds))
