@@ -36,7 +36,7 @@ function count_EWG(num::Int, mol::AbstractMolecule)
         for i = (1:lastindex(neighbors(mol.properties["mol_graph"], num)))
             if true in in(strong_pullers).(ATD_df.Element_wNeighborCount[ATD_df.Secondary_Neighbors[num][i]])
                 # all neighbors of neighbor that are in strong_pullers are an EWG
-                elec_pullers_num += countmap(in(strong_pullers).(ATD_df.Element_wNeighborCount[ATD_df.Secondary_Neighbors[num][i]]))[true]
+                elec_pullers_num += countmap(in(strong_pullers).(mol.atoms.elem[ATD_df.Secondary_Neighbors[num][i]]))[true]
             end
         end
     end
