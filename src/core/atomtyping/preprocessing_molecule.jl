@@ -1,6 +1,5 @@
-
 using BiochemicalAlgorithms
-using Graphs, SimpleWeightedGraphs, StatsBase
+using Graphs, SimpleWeightedGraphs, StatsBase, EnumX
 
 export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preprocessing_df
 
@@ -279,3 +278,24 @@ end
 function enumToString(AnyEnum::Enum)
     return String(Symbol(AnyEnum))
 end
+
+
+function get_bond_row(mol::AbstractMolecule, atom1::Atom, atom2::Atom)
+    for i = (1:nrow(mol.bonds))
+        if (mol.bonds.a1[i] == atom1 && mol.bonds.a2[i] == atom2) || (mol.bonds.a1[i] == atom2 && mol.bonds.a2[i] == atom1)
+            return i
+        end
+    end
+    return 0
+end
+
+
+@enumx BondShortOrder begin
+    sb = 1
+    db = 2
+    tb = 3 
+    qb = 4
+    un = 100
+end
+
+const BondShortOrderType = BondShortOrder.T
