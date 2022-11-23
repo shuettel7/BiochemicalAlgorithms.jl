@@ -27,19 +27,17 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
             if k != 1 
                 if in(["AR1", "AR2", "AR3"]).(ring_class_list[sublitem][1]) &&
                     in(["AR1", "AR2", "AR3"]).(ring_class_list[sublist[k-1]][1])
-                    if isassigned(mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[k-1]),:properties])
-                        mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[k-1]),:properties][1]["TRIPOS_tag"] = "ar"
-                    elseif isassigned(mol.bonds[(mol.bonds[!,:a2] .== sublitem) .& (mol.bonds[!,:a1] .== sublist[k-1]),:properties])
-                        mol.bonds[(mol.bonds[!,:a2] .== sublitem) .& (mol.bonds[!,:a1] .== sublist[k-1]),:properties][1]["TRIPOS_tag"] = "ar"
+                    bond_row = get_bond_row(mol, sublitem, sublist[k-1])
+                    if bond_row != 0
+                        mol.bonds.properties[bond_row]["TRIPOS_tag"] = "ar"
                     end
                 end 
             else
                 if in(["AR1", "AR2", "AR3"]).(ring_class_list[sublitem][1]) &&
                     in(["AR1", "AR2", "AR3"]).(ring_class_list[sublist[lastindex(sublist)]][1])
-                    if isassigned(mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[lastindex(sublist)]),:properties])
-                        mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[lastindex(sublist)]),:properties][1]["TRIPOS_tag"] = "ar"
-                    elseif isassigned(mol.bonds[(mol.bonds[!,:a2] .== sublitem) .& (mol.bonds[!,:a1] .== sublist[k-1]),:properties])
-                        mol.bonds[(mol.bonds[!,:a2] .== sublitem) .& (mol.bonds[!,:a1] .== sublist[lastindex(sublist)]),:properties][1]["TRIPOS_tag"] = "ar"
+                    bond_row = get_bond_row(mol, sublitem, sublist[lastindex(sublist)])
+                    if bond_row != 0
+                        mol.bonds.properties[bond_row]["TRIPOS_tag"] = "ar"
                     end
                 end
             end
@@ -79,12 +77,9 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     mol.properties["Amide_tag_list"] = amide_list = amide_processor(mol, mol_graph, wgraph_adj_matrix, ElemWNeighbourCount_vector)
     if !isempty(amide_list)
         for atompair in amide_list
-            if isassigned(mol.bonds[(mol.bonds[!,:a1] .== atompair[1]) .& (mol.bonds[!,:a2] .== atompair[2]),:properties]) &&
-                !haskey(mol.bonds[(mol.bonds[!,:a1] .== atompair[1]) .& (mol.bonds[!,:a2] .== atompair[2]),:properties][1] ,"TRIPOS_tag")
-                mol.bonds[(mol.bonds[!,:a1] .== atompair[1]) .& (mol.bonds[!,:a2] .== atompair[2]),:properties][1]["TRIPOS_tag"] = "am"
-            elseif isassigned(mol.bonds[(mol.bonds[!,:a1] .== atompair[2]) .& (mol.bonds[!,:a2] .== atompair[1]),:properties]) &&
-                !haskey(mol.bonds[(mol.bonds[!,:a1] .== atompair[2]) .& (mol.bonds[!,:a2] .== atompair[1]),:properties][1], "TRIPOS_tag")
-                mol.bonds[(mol.bonds[!,:a1] .== atompair[2]) .& (mol.bonds[!,:a2] .== atompair[1]),:properties][1]["TRIPOS_tag"] = "am"
+            bond_row = get_bond_row(mol, atompair[1], atompair[2])
+            if bond_row != 0 && !haskey(mol.bonds.properties[bond_row] ,"TRIPOS_tag")
+                mol.bonds.properties[bond_row]["TRIPOS_tag"] = "am"
             end
         end
     else
@@ -164,8 +159,9 @@ end
 function create_atom_preprocessing_df(mol::AbstractMolecule)
     # Create DataFrame for better accessibility and handling of atom properties 
     if !haskey(mol.atoms.properties[1], "ElementWithNeighborCount")
-        @warn "Please execute PreprocessingMolecule! function on Molecule before creating the atom properties DataFrame"
-        return 0
+        println("Running PreprocessingMolecule! on $(mol.name)")
+        ClearPreprocessingMolecule!(mol)
+        PreprocessingMolecule!(mol)
     end
 
     col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "SecondaryNeighbors", 
