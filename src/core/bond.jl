@@ -1,4 +1,4 @@
-export Bond, BondOrder, BondOrderType, BondShortOrder, BondShortOrderType
+export Bond, BondOrder, BondOrderType, BondShortOrder, BondShortOrderType, get_bond_row
 
 using EnumX
 
@@ -29,3 +29,12 @@ end
 end
 
 const BondShortOrderType = BondShortOrder.T
+
+function get_bond_row(mol::AbstractMolecule, atom1::Atom, atom2::Atom)
+    for i = (1:nrow(mol.bonds))
+        if (mol.bonds.a1[i] == atom1 && mol.bonds.a2[i] == atom2) || (mol.bonds.a1[i] == atom2 && mol.bonds.a2[i] == atom1)
+            return i
+        end
+    end
+    return 0
+end
