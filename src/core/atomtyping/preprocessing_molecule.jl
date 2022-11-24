@@ -133,22 +133,24 @@ function create_atom_preprocessing_df(mol::AbstractMolecule)
     atom_props_df = DataFrame([Vector{String}(), Vector{String}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Vector{Int64}}}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Int64}}()], col_names)
-    mol_atom_props = DataFrame()
-    @with mol.atoms begin
-        push!.(mol_atom_props, :properties)
-    end
-    println(mol_atom_props)
-    
-    # for (k, atm) in enumerate(eachrow(mol.atoms))
-    #     push!(atom_props_df, (string(), string(), Vector{Int64}(), 
-    #                         Vector{Vector{Int64}}(), Vector{String}(), Vector{Int64}(), 
-    #                         Vector{Int64}()))
-    #     for col in col_names
-    #         if haskey(atm.properties, col)
-    #             atom_props_df[!,col][k] = atm.properties[col]
-    #         end
-    #     end
+    # mol_atom_props = DataFrame()
+
+    # ### TODO: Metaprogramming version below?
+    # @with innerjoin(DataFrame(mol.atoms.properties), atom_props_df) begin
+    #     push.(mol_atom_props)
     # end
+    # println(mol_atom_props)
+    
+    for (k, atm) in enumerate(eachrow(mol.atoms))
+        push!(atom_props_df, (string(), string(), Vector{Int64}(), 
+                            Vector{Vector{Int64}}(), Vector{String}(), Vector{Int64}(), 
+                            Vector{Int64}()))
+        for col in col_names
+            if haskey(atm.properties, col)
+                atom_props_df[!,col][k] = atm.properties[col]
+            end
+        end
+    end
     return atom_props_df
 end
 
