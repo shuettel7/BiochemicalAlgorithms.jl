@@ -1,8 +1,7 @@
-
 using BiochemicalAlgorithms
-using Graphs, SimpleWeightedGraphs, StatsBase
+using Graphs, SimpleWeightedGraphs, StatsBase, EnumX
 
-export PreprocessingMolecule!, ClearPreprocessingMolecule!
+export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preprocessing_df
 
 
 function PreprocessingMolecule!(mol::AbstractMolecule)
@@ -14,30 +13,30 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 
     # Cycle detection and list
     mol.properties["chem_cycle_list"] = chem_cycle_list = cycle_basis(mol_graph)
-    mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_list)
+    ring_intersections_matrix = Matrix{Vector{Int64}}(undef, lastindex(chem_cycle_list), lastindex(chem_cycle_list))
+    if lastindex(chem_cycle_list) > 1
+        mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_list)
+    end
     mol.properties["ring_class_list"] = ring_class_list = aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
 
-    ### Assign properties to Atoms 
-    ### TODO: Bonds, when properties are introduced to Bond NamedTuple (e.g. adding ar for aromatic, am for amide)
+    ### Assign properties to Atoms and Bonds
     for (j, sublist) in enumerate(chem_cycle_list)
         for (k, sublitem) in enumerate(sublist)
             ### assign "ar" property in mol.bonds.properties["TRIPOS_tag] position of Dictionary
             if k != 1 
                 if in(["AR1", "AR2", "AR3"]).(ring_class_list[sublitem][1]) &&
                     in(["AR1", "AR2", "AR3"]).(ring_class_list[sublist[k-1]][1])
-                    if isassigned(mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[k-1]),:properties])
-                        mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[k-1]),:properties][1]["TRIPOS_tag"] = "ar"
-                    else
-                        mol.bonds[(mol.bonds[!,:a2] .== sublitem) .& (mol.bonds[!,:a1] .== sublist[k-1]),:properties][1]["TRIPOS_tag"] = "ar"
+                    bond_row = get_bond_row(mol, sublitem, sublist[k-1])
+                    if bond_row != 0
+                        mol.bonds.properties[bond_row]["TRIPOS_tag"] = "ar"
                     end
                 end 
             else
                 if in(["AR1", "AR2", "AR3"]).(ring_class_list[sublitem][1]) &&
                     in(["AR1", "AR2", "AR3"]).(ring_class_list[sublist[lastindex(sublist)]][1])
-                    if isassigned(mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[lastindex(sublist)]),:properties])
-                        mol.bonds[(mol.bonds[!,:a1] .== sublitem) .& (mol.bonds[!,:a2] .== sublist[lastindex(sublist)]),:properties][1]["TRIPOS_tag"] = "ar"
-                    else
-                        mol.bonds[(mol.bonds[!,:a2] .== sublitem) .& (mol.bonds[!,:a1] .== sublist[lastindex(sublist)]),:properties][1]["TRIPOS_tag"] = "ar"
+                    bond_row = get_bond_row(mol, sublitem, sublist[lastindex(sublist)])
+                    if bond_row != 0
+                        mol.bonds.properties[bond_row]["TRIPOS_tag"] = "ar"
                     end
                 end
             end
@@ -53,10 +52,20 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 
     ElemWNeighbourCount_vector = Vector{String}()
     for i = (1:nrow(mol.atoms))
-        mol.atoms.properties[i]["ElementWithNeighbourCount"] = ElemWNeighbourCount = string(enumToString(mol.atoms.element[i]), lastindex(neighbors(mol_graph, i)))
+        mol.atoms.properties[i]["ElementWithNeighborCount"] = ElemWNeighbourCount = string(enumToString(mol.atoms.element[i]), lastindex(neighbors(mol_graph, i)))
+        mol.atoms.properties[i]["Neighbors"] = AtomNeighbors = neighbors(mol_graph, i)
+        mol.atoms.properties[i]["SecondaryNeighbors"] = Vector{Vector{Int}}()
+        for (k, neigh) in enumerate(AtomNeighbors)
+            append!(mol.atoms.properties[i]["SecondaryNeighbors"], [[]])
+            for sec_neigh in neighbors(mol_graph, neigh)
+                if sec_neigh != i
+                    push!(mol.atoms.properties[i]["SecondaryNeighbors"][k], sec_neigh)
+                end
+            end
+        end
         push!(ElemWNeighbourCount_vector, ElemWNeighbourCount)
         mol.atoms.properties[i]["AromaticityType"] = mol.properties["ring_class_list"][i]
-        for l in values(countmap(adjacency_matrix(mol.properties["mol_weighted_graph"])[i, neighbors(mol.properties["mol_weighted_graph"], i)]))
+        for l in values(countmap(wgraph_adj_matrix[i, neighbors(mol.properties["mol_weighted_graph"], i)]))
             if !haskey(mol.atoms.properties[i], "BondTypes")
                 mol.atoms.properties[i]["BondTypes"] = [enumToString(BondShortOrderType(l))]
             elseif !all(in(mol.atoms.properties[i]["BondTypes"]).([enumToString(BondShortOrderType(l))]))
@@ -67,16 +76,14 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     mol.properties["Amide_tag_list"] = amide_list = amide_processor(mol, mol_graph, wgraph_adj_matrix, ElemWNeighbourCount_vector)
     if !isempty(amide_list)
         for atompair in amide_list
-            if isassigned(mol.bonds[(mol.bonds[!,:a1] .== atompair[1]) .& (mol.bonds[!,:a2] .== atompair[2]),:properties]) &&
-                !haskey(mol.bonds[(mol.bonds[!,:a1] .== atompair[1]) .& (mol.bonds[!,:a2] .== atompair[2]),:properties][1] ,"TRIPOS_tag")
-                mol.bonds[(mol.bonds[!,:a1] .== atompair[1]) .& (mol.bonds[!,:a2] .== atompair[2]),:properties][1]["TRIPOS_tag"] = "am"
-            elseif isassigned(mol.bonds[(mol.bonds[!,:a1] .== atompair[2]) .& (mol.bonds[!,:a2] .== atompair[1]),:properties]) &&
-                !haskey(mol.bonds[(mol.bonds[!,:a1] .== atompair[2]) .& (mol.bonds[!,:a2] .== atompair[1]),:properties][1], "TRIPOS_tag")
-                mol.bonds[(mol.bonds[!,:a1] .== atompair[2]) .& (mol.bonds[!,:a2] .== atompair[1]),:properties][1]["TRIPOS_tag"] = "am"
+            bond_row = get_bond_row(mol, atompair[1], atompair[2])
+            if bond_row != 0 && !haskey(mol.bonds.properties[bond_row] ,"TRIPOS_tag")
+                mol.bonds.properties[bond_row]["TRIPOS_tag"] = "am"
             end
         end
+    else
+        delete!(mol.properties, "Amide_tag_list")
     end
-    
 end
 
 
@@ -96,24 +103,36 @@ end
 
 function ClearPreprocessingMolecule!(mol::AbstractMolecule)
     if haskey(mol.properties, "mol_graph")
-        delete!(mol.properties[i], "mol_graph")
+        delete!(mol.properties, "mol_graph")
     end
     if haskey(mol.properties, "adjacency_matrix")
-        delete!(mol.properties[i], "adjacency_matrix")
+        delete!(mol.properties, "adjacency_matrix")
     end
     if haskey(mol.properties, "mol_weighted_graph")
-        delete!(mol.properties[i], "mol_weighted_graph")
+        delete!(mol.properties, "mol_weighted_graph")
     end
     if haskey(mol.properties, "weighted_graph_adj_matrix")
-        delete!(mol.properties[i], "weighted_graph_adj_matrix")
+        delete!(mol.properties, "weighted_graph_adj_matrix")
+    end
+    if haskey(mol.properties, "chem_cycle_list")
+        delete!(mol.properties, "chem_cycle_list")
+    end
+    if haskey(mol.properties, "ring_intersections_matrix")
+        delete!(mol.properties, "ring_intersections_matrix")
+    end
+    if haskey(mol.properties, "ring_class_list")
+        delete!(mol.properties, "ring_class_list")
+    end
+    if haskey(mol.properties, "Amide_tag_list")
+        delete!(mol.properties, "Amide_tag_list")
     end
     for i = (1:nrow(mol.atoms))
         if haskey(mol.atoms.properties[i], "CycleListNum")
             delete!(mol.atoms.properties[i], "CycleListNum")
             delete!(mol.atoms.properties[i], "CycleSize")
         end
-        if haskey(mol.atoms.properties[i], "ElementWithNeighbourCount")
-            delete!(mol.atoms.properties[i], "ElementWithNeighbourCount")
+        if haskey(mol.atoms.properties[i], "ElementWithNeighborCount")
+            delete!(mol.atoms.properties[i], "ElementWithNeighborCount")
         end
         if haskey(mol.atoms.properties[i], "AromaticityType")
             delete!(mol.atoms.properties[i], "AromaticityType")
@@ -121,12 +140,45 @@ function ClearPreprocessingMolecule!(mol::AbstractMolecule)
         if haskey(mol.atoms.properties[i], "BondTypes")
             delete!(mol.atoms.properties[i], "BondTypes")
         end
+        if haskey(mol.atoms.properties[i], "Neighbors")
+            delete!(mol.atoms.properties[i], "Neighbors")
+        end
+        if haskey(mol.atoms.properties[i], "SecondaryNeighbors")
+            delete!(mol.atoms.properties[i], "SecondaryNeighbors")
+        end
     end
     for i = (1:nrow(mol.bonds))
         if haskey(mol.bonds.properties[i], "TRIPOS_tag")
             delete!(mol.bonds.properties[i], "TRIPOS_tag")
         end
     end
+end
+
+
+function create_atom_preprocessing_df(mol::AbstractMolecule)
+    # Create DataFrame for better accessibility and handling of atom properties 
+    if !haskey(mol.atoms.properties[1], "ElementWithNeighborCount")
+        println("Running PreprocessingMolecule! on $(mol.name)")
+        ClearPreprocessingMolecule!(mol)
+        PreprocessingMolecule!(mol)
+    end
+
+    col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "SecondaryNeighbors", 
+                 "BondTypes", "CycleSize", "CycleListNum"]
+    atom_props_df = DataFrame([Vector{Vector{String}}(), Vector{String}(), Vector{Vector{Int64}}(), 
+                            Vector{Vector{Vector{Int64}}}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
+                            Vector{Vector{Int64}}()], col_names)
+    for (k, atm) in enumerate(eachrow(mol.atoms))
+        push!(atom_props_df, (Vector{String}(), "", Vector{Int64}(), 
+                            Vector{Vector{Int64}}(), Vector{String}(), Vector{Int64}(), 
+                            Vector{Int64}()))
+        for col in col_names
+            if haskey(atm.properties, col)
+                atom_props_df[!,col][k] = atm.properties[col]
+            end
+        end
+    end
+    return atom_props_df
 end
 
 
@@ -226,3 +278,24 @@ end
 function enumToString(AnyEnum::Enum)
     return String(Symbol(AnyEnum))
 end
+
+
+function get_bond_row(mol::AbstractMolecule, atom1::Atom, atom2::Atom)
+    for i = (1:nrow(mol.bonds))
+        if (mol.bonds.a1[i] == atom1 && mol.bonds.a2[i] == atom2) || (mol.bonds.a1[i] == atom2 && mol.bonds.a2[i] == atom1)
+            return i
+        end
+    end
+    return 0
+end
+
+
+@enumx BondShortOrder begin
+    sb = 1
+    db = 2
+    tb = 3 
+    qb = 4
+    un = 100
+end
+
+const BondShortOrderType = BondShortOrder.T

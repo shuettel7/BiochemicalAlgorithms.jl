@@ -15,6 +15,7 @@ include("core/nucleotide.jl")
 include("core/protein.jl")
 include("core/atomtyping/preprocessing_molecule.jl")
 include("core/atomtyping/DEF_file_parser.jl")
+include("core/atomtyping/atomtype_processor.jl")
 
 module PubChem
 include("fileformats/pubchem_json.jl")
