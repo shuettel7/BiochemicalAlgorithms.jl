@@ -280,7 +280,7 @@ function enumToString(AnyEnum::Enum)
 end
 
 
-function get_bond_row(mol::AbstractMolecule, atom1::Atom, atom2::Atom)
+function get_bond_row(mol::AbstractMolecule, atom1::Int, atom2::Int)
     for i = (1:nrow(mol.bonds))
         if (mol.bonds.a1[i] == atom1 && mol.bonds.a2[i] == atom2) || (mol.bonds.a1[i] == atom2 && mol.bonds.a2[i] == atom1)
             return i
