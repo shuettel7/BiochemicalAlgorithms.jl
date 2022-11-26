@@ -21,21 +21,23 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 
     ### Assign properties to Atoms and Bonds
     for (j, sublist) in enumerate(chem_cycle_list)
-        ring_atoms = DataFrame(:number => sublist)
-        ring_bonds = DataFrame(:a1 => sublist, :a2 => append!(sublist[2:lastindex(sublist)], sublist[1]))
+        sublist_copy = copy(sublist)
+        shifted_sublist = append!(sublist_copy[2:lastindex(sublist)], sublist_copy[1])
+        ring_bonds = DataFrame(:a1 => [sublist; shifted_sublist], :a2 => [shifted_sublist; sublist])
         if all(in(["AR1"]).(ring_class_list[sublist]))
-            ring_bonds = DataFrame(:a1 => sublist, :a2 => append!(sublist[2:lastindex(sublist)], sublist[1]))
             @with innerjoin(ring_bonds, mol.bonds, on = [:a1, :a2]) begin
                 push!.(:properties, "TRIPOS_tag" => "ar")
             end
-            @with innerjoin(ring_bonds, mol.bonds, on = [:a1 => :a2, :a2 => :a1]) begin
-                push!.(:properties, "TRIPOS_tag" => "ar")
+        end
+        for num in sublist
+            if haskey(mol.atoms.properties[num], "CycleListNum") && haskey(mol.atoms.properties[num], "CycleSize")
+                append!(mol.atoms.properties[num]["CycleListNum"], [j])
+                append!(mol.atoms.properties[num]["CycleSize"], [lastindex(sublist)])
+            else
+                push!(mol.atoms.properties[num], "CycleListNum" => [j])
+                push!(mol.atoms.properties[num], "CycleSize" => [lastindex(sublist)])
             end
-        end
-        @with innerjoin(ring_atoms, mol.atoms, on = [:number]) begin
-                push!.(:properties, "CycleListNum" => [j])
-                push!.(:properties, "CycleSize" => [lastindex(sublist)])
-        end
+        end 
     end
 
     ElemWNeighbourCount_vector = @with mol.atoms @byrow string(enumToString(:element), lastindex(neighbors(mol_graph, :number)))
@@ -49,10 +51,8 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     amide_list = amide_processor(mol, mol_graph, ElemWNeighbourCount_vector)
     if !isempty(amide_list)
         amide_bonded_atoms_df = DataFrame(NamedTuple{(:a1, :a2)}.(amide_list))
+        append!(amide_bonded_atoms_df, NamedTuple{(:a2, :a1)}.(amide_list))
         @with innerjoin(amide_bonded_atoms_df, mol.bonds, on = [:a1, :a2]) begin
-            push!.(:properties, "TRIPOS_tag" => "am")
-        end
-        @with innerjoin(amide_bonded_atoms_df, mol.bonds, on = [:a1 => :a2, :a2 => :a1]) begin
             push!.(:properties, "TRIPOS_tag" => "am")
         end
     end
@@ -132,23 +132,14 @@ function create_atom_preprocessing_df(mol::AbstractMolecule)
                  "BondTypes", "CycleSize", "CycleListNum"]
     atom_props_df = DataFrame([Vector{String}(), Vector{String}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Vector{Int64}}}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
-                            Vector{Vector{Int64}}()], col_names)
-    # mol_atom_props = DataFrame()
-
-    # ### TODO: Metaprogramming version below?
-    # @with innerjoin(DataFrame(mol.atoms.properties), atom_props_df) begin
-    #     push.(mol_atom_props)
-    # end
-    # println(mol_atom_props)
+                            Vector{Vector{Int64}}()], col_names)        
     
     for (k, atm) in enumerate(eachrow(mol.atoms))
         push!(atom_props_df, (string(), string(), Vector{Int64}(), 
-                            Vector{Vector{Int64}}(), Vector{String}(), Vector{Int64}(), 
-                            Vector{Int64}()))
-        for col in col_names
-            if haskey(atm.properties, col)
-                atom_props_df[!,col][k] = atm.properties[col]
-            end
+                        Vector{Vector{Int64}}(), Vector{String}(), Vector{Int64}(), 
+                        Vector{Int64}()))
+        for col in intersect(col_names, keys(atm.properties))
+            atom_props_df[!,col][k] = atm.properties[col]
         end
     end
     return atom_props_df
