@@ -15,51 +15,73 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
         if Int(mol.atoms.element[i]) == 1
             num_EWG_groups = count_EWG(i, mol, atmprops_df)
         end
-
+        println(eachrow(def_curr_df)[1])
         def_curr_df = @subset def_curr_df @byrow begin
             :atomic_number == Int(mol.atoms.element[i])
         end
         df_match = false
         while !df_match && nrow(def_curr_df) > 0
-            df_match_list = [0 for _ in 1:6]
-            for (colnum, coldata) in eachrow(def_curr_df)[1][3:8]
+            match_list = [0 for _ in 1:6]
+            for (colnum, coldata) in enumerate(eachrow(def_curr_df)[1][3:8])
                 if coldata == "*" || coldata == -1
-                    df_match_list[colnum] = 1
+                    match_list[colnum] = 2
                     continue
                 else
                     if colnum == 1 && coldata == Int(mol.atoms.element[i])
-                        df_match_list[colnum] = 1
+                        match_list[colnum] = 1
                     end
                     if colnum == 2 && coldata == lastindex(atmprops_df.Neighbors[i])
-                        df_match_list[colnum] = 1
+                        match_list[colnum] = 1
                     end
                     if colnum == 3 && coldata == num_H_neighbors
-                        df_match_list[colnum] = 1
+                        match_list[colnum] = 1
                     end
                     if colnum == 4 && coldata == num_EWG_groups
-                        df_match_list[colnum] = 1
+                        match_list[colnum] = 1
                     end
-                    if colnum == 5 && check_BondTypes(coldata, atmprops_df[i,:])
-                        df_match_list[colnum] = 1
+                    if colnum == 5 && check_BondTypes(coldata, eachrow(atmprops_df)[i])
+                        match_list[colnum] = 1
                     end
                     if colnum == 6 && CES_parser(coldata, atmprops_df[i,:])
-                        df_match_list[colnum] = 1
+                        match_list[colnum] = 1
                     end
                 end
             end
-            if all(in([1]).(df_match_list))
+            println(match_list)
+            if all(in([1]).(match_list))
                 df_match = true
                 mol.atoms.atomtype[i] = def_curr_df.type_name[1]
+            elseif nrow(def_curr_df) == 0
+                mol.atoms.atomtype[i] = "DU" # DU is from TRIPOS standard. maybe different expression?
             else
-                mol.atoms.atomtype[i] = "DU"
+                def_curr_df = def_curr_df[2:nrow(def_curr_df), :]
             end
         end
     end
 end
 
 
-function check_BondTypes(colstring::String, atmprops_df::DataFrame)
+function check_BondTypes(colstring::String, atmprops_df::DataFrameRow)
+    and_count = count(==(','), colstring)
+    or_count = count(==('.'), colstring)
+    build_expression_str = ""
+    for (i, char) in enumerate(colstring)
+        build_comp_str = ""
 
+        if char != ',' && char != '.'
+            if islowercase(char)
+                build_comp_str = string(build_comp_str, char)
+            end
+            
+        else
+            if char == '.'
+                build_expression_str = string(build_expression_str, "in($(atmprops_df.BondTypes[1])).($build_comp_str)", " || ")
+                build_comp_str = ""
+            elseif char == ','
+                build_expression_str = string(build_expression_str, "in($(atmprops_df.BondTypes[1])).($build_comp_str)", " && ")
+            end
+        end
+    end
 end
 
 
