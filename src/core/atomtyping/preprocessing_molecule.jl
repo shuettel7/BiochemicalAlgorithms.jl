@@ -5,6 +5,7 @@ export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preproce
 
 
 function PreprocessingMolecule!(mol::AbstractMolecule)
+    ClearPreprocessingMolecule!(mol)
     # Graph representation of Molecule
     mol.properties["mol_graph"] = mol_graph = build_graph(mol)
     mol.properties["adjacency_matrix"] = adj_matrix = adjacency_matrix(mol.properties["mol_graph"])
@@ -19,9 +20,11 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     end
     mol.properties["ring_class_list"] = ring_class_list = aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
 
-    ### Assign properties to Atoms and Bonds
+    ### Assign Cycle/Ring properties to Atoms and Bonds
     for (j, sublist) in enumerate(chem_cycle_list)
         sublist_copy = copy(sublist)
+
+        ### add TRIPOS_tag to AR1 type bonds
         shifted_sublist = append!(sublist_copy[2:lastindex(sublist)], sublist_copy[1])
         ring_bonds = DataFrame(:a1 => [sublist; shifted_sublist], :a2 => [shifted_sublist; sublist])
         if all(in(["AR1"]).(ring_class_list[sublist]))
@@ -29,17 +32,19 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
                 push!.(:properties, "TRIPOS_tag" => "ar")
             end
         end
+    
+        ### add CycleListNumber and CycleSize to every ring atom property
         for num in sublist
-            if haskey(mol.atoms.properties[num], "CycleListNum") && haskey(mol.atoms.properties[num], "CycleSize")
+            if !(haskey(mol.atoms.properties[num], "CycleListNum") && haskey(mol.atoms.properties[num], "CycleSize"))
+                push!(mol.atoms.properties[num], "CycleListNum" => [j], "CycleSize" => [lastindex(sublist)])
+            elseif !in(mol.atoms.properties[num]["CycleListNum"]).(j)
                 append!(mol.atoms.properties[num]["CycleListNum"], [j])
                 append!(mol.atoms.properties[num]["CycleSize"], [lastindex(sublist)])
-            else
-                push!(mol.atoms.properties[num], "CycleListNum" => [j])
-                push!(mol.atoms.properties[num], "CycleSize" => [lastindex(sublist)])
             end
         end 
     end
 
+    ### add further fields to atom properties
     ElemWNeighbourCount_vector = @with mol.atoms @byrow string(enumToString(:element), lastindex(neighbors(mol_graph, :number)))
     @with mol.atoms @byrow push!(:properties, 
                         "ElementWithNeighborCount" => string(enumToString(:element), lastindex(neighbors(mol_graph, :number))),
@@ -48,6 +53,7 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
                         "SecondaryNeighbors" => secondary_neighbors(mol_graph, :number),
                         "BondTypes" => bondShortOrder_types(:number, mol_graph, wgraph_adj_matrix))        
     
+    ### add amide TRIPOS_tag to amide bonds
     amide_list = amide_processor(mol, mol_graph, ElemWNeighbourCount_vector)
     if !isempty(amide_list)
         amide_bonded_atoms_df = DataFrame(NamedTuple{(:a1, :a2)}.(amide_list))
