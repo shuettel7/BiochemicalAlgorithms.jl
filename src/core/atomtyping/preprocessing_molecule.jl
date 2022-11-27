@@ -18,7 +18,8 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     if lastindex(chem_cycle_list) > 1
         mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_list)
     end
-    mol.properties["ring_class_list"] = ring_class_list = aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
+    mol.properties["atom_aromaticity_list"] = atom_aromaticity_list = atom_aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
+    mol.properties["ring_class_list"] = ring_class_list = ring_aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
 
     ### Assign Cycle/Ring properties to Atoms and Bonds
     for (j, sublist) in enumerate(chem_cycle_list)
@@ -27,7 +28,7 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
         ### add TRIPOS_tag to AR1 type bonds
         shifted_sublist = append!(sublist_copy[2:lastindex(sublist)], sublist_copy[1])
         ring_bonds = DataFrame(:a1 => [sublist; shifted_sublist], :a2 => [shifted_sublist; sublist])
-        if all(in(["AR1"]).(ring_class_list[sublist]))
+        if all(in(["AR1"]).(atom_aromaticity_list[sublist]))
             @with innerjoin(ring_bonds, mol.bonds, on = [:a1, :a2]) begin
                 push!.(:properties, "TRIPOS_tag" => "ar")
             end
@@ -49,9 +50,9 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     @with mol.atoms @byrow push!(:properties, 
                         "ElementWithNeighborCount" => string(enumToString(:element), lastindex(neighbors(mol_graph, :number))),
                         "Neighbors" => neighbors(mol_graph, :number), 
-                        "AromaticityType" => mol.properties["ring_class_list"][:number],
+                        "AromaticityType" => mol.properties["atom_aromaticity_list"][:number],
                         "SecondaryNeighbors" => secondary_neighbors(mol_graph, :number),
-                        "BondTypes" => bondShortOrder_types(:number, mol_graph, wgraph_adj_matrix))        
+                        "BondTypes" => bondShortOrder_types(:number, mol, mol_graph, wgraph_adj_matrix))        
     
     ### add amide TRIPOS_tag to amide bonds
     amide_list = amide_processor(mol, mol_graph, ElemWNeighbourCount_vector)
@@ -65,10 +66,13 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 end
 
 
-function bondShortOrder_types(num::Int, mol_graph::Graph, wgraph_adj_matrix::Graphs.SparseMatrix)
+function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph, wgraph_adj_matrix::Graphs.SparseMatrix)
     BondShortVec = Vector{String}()
     for i in keys(countmap(wgraph_adj_matrix[num, neighbors(mol_graph, num)]))
         push!(BondShortVec, enumToString(BondShortOrderType(Int(i))))
+    end
+    for prop in mol.properties["atom_aromaticity_list"][num]
+        push!(BondShortVec, prop)
     end
     return BondShortVec
 end
@@ -106,7 +110,8 @@ end
 function ClearPreprocessingMolecule!(mol::AbstractMolecule)
     mol_props_names = ["mol_graph", "adjacency_matrix", "mol_weighted_graph", 
                         "weighted_graph_adj_matrix", "chem_cycle_list", 
-                        "ring_intersections_matrix", "ring_class_list"]
+                        "ring_intersections_matrix", "ring_class_list", 
+                        "atom_aromaticity_list"]
     atom_props_names = ["CycleListNum", "CycleSize", "ElementWithNeighborCount",
                         "AromaticityType", "BondTypes", "Neighbors", "SecondaryNeighbors"]
     bond_props_names = ["TRIPOS_tag"]
@@ -136,12 +141,12 @@ function create_atom_preprocessing_df(mol::AbstractMolecule)
 
     col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "SecondaryNeighbors", 
                  "BondTypes", "CycleSize", "CycleListNum"]
-    atom_props_df = DataFrame([Vector{String}(), Vector{String}(), Vector{Vector{Int64}}(), 
+    atom_props_df = DataFrame([Vector{Vector{String}}(), Vector{String}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Vector{Int64}}}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Int64}}()], col_names)        
     
     for (k, atm) in enumerate(eachrow(mol.atoms))
-        push!(atom_props_df, (string(), string(), Vector{Int64}(), 
+        push!(atom_props_df, (Vector{String}(), string(), Vector{Int64}(), 
                         Vector{Vector{Int64}}(), Vector{String}(), Vector{Int64}(), 
                         Vector{Int64}()))
         for col in intersect(col_names, keys(atm.properties))
@@ -152,10 +157,53 @@ function create_atom_preprocessing_df(mol::AbstractMolecule)
 end
 
 
-function aromaticity_type_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
-    ring_class_list = Vector{String}(undef, nrow(mol.atoms))
+function ring_aromaticity_type_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
+    ring_class_list = Vector{String}()
+    for (numvlist, vlist) in enumerate(LList)
+
+        # check if is O, N, or S present in Ring vertex list
+        ONSP_present = false
+        if true in in(mol.atoms.element[vlist]).([Elements.O,Elements.N,Elements.S,Elements.P])
+            ONSP_present = true
+        end
+        
+        # check number of pi electrons
+        pi_elec = 0
+        for bond = (1:lastindex(vlist)-1)
+            if bond == 1 && Int(wgraph_adj[vlist[bond], vlist[lastindex(vlist)]]) == 2
+                pi_elec += 2
+            elseif Int(wgraph_adj[vlist[bond], vlist[bond+1]]) == 2
+                pi_elec += 2
+            end
+        end
+        if (pi_elec / lastindex(vlist)) == 1.0
+                push!(ring_class_list, "AR1")
+        elseif (pi_elec / lastindex(vlist)) > 1/2 && (pi_elec / lastindex(vlist)) <= 1 && ONSP_present && lastindex(vlist) > 4
+                push!(ring_class_list, "AR2")
+        elseif (pi_elec / lastindex(vlist)) > 1/2 && (pi_elec / lastindex(vlist)) < 1 && !ONSP_present && lastindex(vlist) > 4
+            # check if Ring vlist has intersections with other rings in molecule and if these are aromatic
+            for i = (1:lastindex(LList))
+                if !isempty(inters_matrix[numvlist,i]) && lastindex(inters_matrix[numvlist, i]) == 2
+                    atom1_bonds = filter(:a1 => n -> n == inters_matrix[numvlist,i][1], mol.bonds)
+                    atom2_bonds = filter(:a1 => n -> n == inters_matrix[numvlist,i][2], mol.bonds)
+                    if countmap(in([BondOrder.Double]).(atom1_bonds.order))[1] == 1 &&
+                        countmap(in([BondOrder.Double]).(atom2_bonds.order))[1] == 1
+                        push!(ring_class_list, "AR1") 
+                    end           
+                end
+            end
+        elseif (pi_elec / lastindex(vlist)) < 1/2
+            push!(ring_class_list, "AR5")
+        end
+    end
+    return ring_class_list
+end
+
+
+function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
+    atom_ring_class_list = Vector{Vector{String}}(undef, nrow(mol.atoms))
     for i = (1:nrow(mol.atoms))
-        ring_class_list[i] = "NG"
+        atom_ring_class_list[i] = ["NG"]
     end
     for (numvlist, vlist) in enumerate(LList)
 
@@ -176,11 +224,11 @@ function aromaticity_type_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Gr
         end
         if (pi_elec / lastindex(vlist)) == 1.0
             for x in vlist
-                ring_class_list[x] = "AR1"
+                atom_ring_class_list[x] = ["AR1", string("RG", lastindex(vlist))]
             end
         elseif (pi_elec / lastindex(vlist)) > 1/2 && (pi_elec / lastindex(vlist)) <= 1 && ONSP_present && lastindex(vlist) > 4
             for x in vlist
-                ring_class_list[x] = "AR2"
+                atom_ring_class_list[x] = ["AR2", string("RG", lastindex(vlist))]
             end
         elseif (pi_elec / lastindex(vlist)) > 1/2 && (pi_elec / lastindex(vlist)) < 1 && !ONSP_present && lastindex(vlist) > 4
             # check if Ring vlist has intersections with other rings in molecule and if these are aromatic
@@ -191,8 +239,8 @@ function aromaticity_type_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Gr
                     if countmap(in([BondOrder.Double]).(atom1_bonds.order))[1] == 1 &&
                         countmap(in([BondOrder.Double]).(atom2_bonds.order))[1] == 1
                         for x in vlist
-                            if ring_class_list[x] != "AR1"
-                                ring_class_list[x] = "AR1"
+                            if in(atom_ring_class_list[x]).("AR1")
+                                atom_ring_class_list[x] = ["AR1", string("RG", lastindex(vlist))]
                             end
                         end 
                     end           
@@ -200,13 +248,13 @@ function aromaticity_type_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Gr
             end
         elseif (pi_elec / lastindex(vlist)) < 1/2
             for x in vlist
-                if ring_class_list[x] != "AR5" && ring_class_list[x] != "AR1"
-                    ring_class_list[x] = "AR5"  
+                if in(atom_ring_class_list[x]).("AR5") && !in(atom_ring_class_list[x]).("AR1")
+                    atom_ring_class_list[x] = ["AR5", string("RG", lastindex(vlist))]  
                 end
             end
         end
     end
-    return ring_class_list
+    return atom_ring_class_list
 end
 
 
