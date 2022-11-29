@@ -28,7 +28,7 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
         ### add TRIPOS_tag to AR1 type bonds
         shifted_sublist = append!(sublist_copy[2:lastindex(sublist)], sublist_copy[1])
         ring_bonds = DataFrame(:a1 => [sublist; shifted_sublist], :a2 => [shifted_sublist; sublist])
-        if all(in(["AR1"]).(atom_aromaticity_list[sublist]))
+        if all(in([["AR1", string("RG", lastindex(sublist))]]).(atom_aromaticity_list[sublist]))
             @with innerjoin(ring_bonds, mol.bonds, on = [:a1, :a2]) begin
                 push!.(:properties, "TRIPOS_tag" => "ar")
             end
