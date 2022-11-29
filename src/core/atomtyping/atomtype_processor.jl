@@ -39,7 +39,7 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                     if colnum == 4 && coldata == num_EWG_groups
                         match_list[colnum] = 1
                     end
-                    if colnum == 5 && check_BondTypes(coldata, eachrow(atmprops_df)[i])
+                    if colnum == 5 && APS_processor(coldata, eachrow(atmprops_df)[i])
                         match_list[colnum] = 1
                     end
                     if colnum == 6 && CES_parser(coldata, atmprops_df[i,:])
@@ -55,30 +55,6 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                 mol.atoms.atomtype[i] = "DU" # DU is from TRIPOS standard. maybe different expression?
             else
                 def_curr_df = def_curr_df[2:nrow(def_curr_df), :]
-            end
-        end
-    end
-end
-
-
-function check_BondTypes(colstring::String, atmprops_df::DataFrameRow)
-    and_count = count(==(','), colstring)
-    or_count = count(==('.'), colstring)
-    build_expression_str = ""
-    for (i, char) in enumerate(colstring)
-        build_comp_str = ""
-
-        if char != ',' && char != '.'
-            if islowercase(char)
-                build_comp_str = string(build_comp_str, char)
-            end
-            
-        else
-            if char == '.'
-                build_expression_str = string(build_expression_str, "in($(atmprops_df.BondTypes[1])).($build_comp_str)", " || ")
-                build_comp_str = ""
-            elseif char == ','
-                build_expression_str = string(build_expression_str, "in($(atmprops_df.BondTypes[1])).($build_comp_str)", " && ")
             end
         end
     end
