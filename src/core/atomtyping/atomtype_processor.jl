@@ -4,7 +4,7 @@ export get_molecule_atomtypes!, count_EWG
 
 function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
     PreprocessingMolecule!(mol)
-    atmprops_df = create_atom_preprocessing_df(mol)
+    atmprops_df = create_atom_preprocessing_df!(mol)
     def_file_df = load_atomtyping_DEF(mapfile)
     
     # loop over atoms, prefilter dataframe by element and neighbor count
@@ -15,7 +15,6 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
         if Int(mol.atoms.element[i]) == 1
             num_EWG_groups = count_EWG(i, mol, atmprops_df)
         end
-        println(eachrow(def_curr_df)[1])
         def_curr_df = @subset def_curr_df @byrow begin
             :atomic_number == Int(mol.atoms.element[i])
         end
@@ -39,46 +38,21 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                     if colnum == 4 && coldata == num_EWG_groups
                         match_list[colnum] = 1
                     end
-                    if colnum == 5 && check_BondTypes(coldata, eachrow(atmprops_df)[i])
+                    if colnum == 5 && APS_processor(coldata, DataFrameRow(atmprops_df, i))
                         match_list[colnum] = 1
                     end
-                    if colnum == 6 && CES_parser(coldata, atmprops_df[i,:])
-                        match_list[colnum] = 1
+                    if colnum == 6 #&& CES_parser(coldata, atmprops_df[i,:])
+                        match_list[colnum] = 2
                     end
                 end
             end
-            println(match_list)
-            if all(in([1]).(match_list))
+            if all(in([1, 2]).(match_list))
                 df_match = true
                 mol.atoms.atomtype[i] = def_curr_df.type_name[1]
             elseif nrow(def_curr_df) == 0
                 mol.atoms.atomtype[i] = "DU" # DU is from TRIPOS standard. maybe different expression?
             else
                 def_curr_df = def_curr_df[2:nrow(def_curr_df), :]
-            end
-        end
-    end
-end
-
-
-function check_BondTypes(colstring::String, atmprops_df::DataFrameRow)
-    and_count = count(==(','), colstring)
-    or_count = count(==('.'), colstring)
-    build_expression_str = ""
-    for (i, char) in enumerate(colstring)
-        build_comp_str = ""
-
-        if char != ',' && char != '.'
-            if islowercase(char)
-                build_comp_str = string(build_comp_str, char)
-            end
-            
-        else
-            if char == '.'
-                build_expression_str = string(build_expression_str, "in($(atmprops_df.BondTypes[1])).($build_comp_str)", " || ")
-                build_comp_str = ""
-            elseif char == ','
-                build_expression_str = string(build_expression_str, "in($(atmprops_df.BondTypes[1])).($build_comp_str)", " && ")
             end
         end
     end
