@@ -1,7 +1,7 @@
 using BiochemicalAlgorithms
 using Graphs, SimpleWeightedGraphs, StatsBase, EnumX, DataFramesMeta
 
-export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preprocessing_df
+export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preprocessing_df!
 
 
 function PreprocessingMolecule!(mol::AbstractMolecule)
@@ -68,8 +68,14 @@ end
 
 function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph, wgraph_adj_matrix::Graphs.SparseMatrix)
     BondShortVec = Vector{String}()
-    for i in keys(countmap(wgraph_adj_matrix[num, neighbors(mol_graph, num)]))
-        push!(BondShortVec, enumToString(BondShortOrderType(Int(i))))
+    bonds_dict = countmap(wgraph_adj_matrix[num, neighbors(mol_graph, num)])
+    for i in keys(bonds_dict)
+        curr_bond_str = enumToString(BondShortOrderType(Int(i)))
+        if !in(mol.properties["atom_aromaticity_list"][num]).("NG") && !in(mol.properties["atom_aromaticity_list"][num]).("AR5")
+            push!(BondShortVec, curr_bond_str, string(bonds_dict[i], curr_bond_str))
+        else
+            push!(BondShortVec, uppercase(curr_bond_str), string(bonds_dict[i], uppercase(curr_bond_str)))
+        end
     end
     for prop in mol.properties["atom_aromaticity_list"][num]
         push!(BondShortVec, prop)
@@ -131,7 +137,7 @@ function ClearPreprocessingMolecule!(mol::AbstractMolecule)
 end
 
 
-function create_atom_preprocessing_df(mol::AbstractMolecule)
+function create_atom_preprocessing_df!(mol::AbstractMolecule)
     # Create DataFrame for better accessibility and handling of atom properties 
     if !haskey(mol.atoms.properties[1], "ElementWithNeighborCount")
         println("Running PreprocessingMolecule! on $(mol.name)")
