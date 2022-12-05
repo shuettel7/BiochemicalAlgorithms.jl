@@ -38,10 +38,10 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                     if colnum == 4 && coldata == num_EWG_groups
                         match_list[colnum] = 1
                     end
-                    if colnum == 5 && APS_processor(coldata, DataFrameRow(atmprops_df, i))
+                    if colnum == 5 && APS_processor(coldata, atmprops_df[i,:])
                         match_list[colnum] = 1
                     end
-                    if colnum == 6 #&& CES_parser(coldata, atmprops_df[i,:])
+                    if colnum == 6 && CES_parser(coldata, atmprops_df[i,:], mol)
                         match_list[colnum] = 2
                     end
                 end
