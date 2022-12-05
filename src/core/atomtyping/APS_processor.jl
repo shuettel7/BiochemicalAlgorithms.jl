@@ -4,7 +4,7 @@
 export APS_processor
 
 function APS_processor(colstring::String, atmprops_df::DataFrameRow)
-    if colstring[1] == "[" && colstring[lastindex(colstring)] == "]"
+    if colstring[1] == '[' && colstring[lastindex(colstring)] == ']'
         colstring = colstring[2:lastindex(colstring)-1]
     end
     and_count = count(==(','), colstring)
