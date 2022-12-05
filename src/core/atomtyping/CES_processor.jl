@@ -1,11 +1,12 @@
 using BiochemicalAlgorithms
 
 
-function CES_parser(colstring::String, atmprops_df::DataFrameRow, mol::AbstractMolecule, layer::Int)
+function CES_parser(colstring::String, atmprops_df::DataFrameRow, mol::AbstractMolecule, layer::Int, atom_num::Int)
     if colstring[1] == '(' && colstring[lastindex(colstring)] == ')'
         colstring = colstring[2:lastindex(colstring)-1]
     end
-    
+
+    current_layer_neighbors = get_current_layer(mol.properties["mol_graph"], )
     open_and_logic_chars_list = ['(', '[', '<', ',', '.']
     close_and_logic_chars_list = [')', ']', '>', ',', '.']
 
@@ -28,18 +29,18 @@ function CES_parser(colstring::String, atmprops_df::DataFrameRow, mol::AbstractM
     next_comma_list = findnext(',', colstring, 1)
     next_dot_list = findnext('.', colstring, 1)
 
-    this_layer_expr = Expr(:||)
-    next_layer_expr = Expr(:&&)
+    layer_expr = Expr(:&&)
     
     sections_df = DataFrame([Vector{Int}(), Vector{String}(), Vector{Int}(),
                     Vector{Int}(), Vector{Vector{Int}}(), Vector{Vector{Int}}()],
                     ["NumOfType", "Type", "Open", "Closed", "Subgroups", "Intersections"])
     for (i,char) in enumerate(colstring)
         if char == '('
+            push!(layer_expr.args, in(current_layer_atom_list).(colstring[1:i-1]))
             layer += 1
             push!(next_layer_expr, CES_parser(colstring[i:lastindex(colstring)],atmprops_df,mol,layer))
         elseif char == ')'
-            return 
+            return eval(layer_expr)
         elseif char == '[' 
             ### Question about what eg. [sb'] means, Antechamber instructions unclear
             push!(sections_df, )
