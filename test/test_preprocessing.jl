@@ -8,6 +8,7 @@
     @test length(mol.atoms.properties[20]) == 7
     @test lastindex(mol.atoms.properties[13]["CycleListNum"]) == 2
     @test mol.atoms.properties[20]["Neighbors"] == [1, 17, 21]
+    @test mol.atoms.properties[1]["SecondaryNeighbors"] == [17, 21]
     @test mol.bonds.properties[9]["TRIPOS_tag"] == "am"
     @test mol.bonds.properties[31]["TRIPOS_tag"] == "ar"
 end

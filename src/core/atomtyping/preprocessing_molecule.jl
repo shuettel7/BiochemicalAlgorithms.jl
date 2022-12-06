@@ -1,7 +1,7 @@
 using BiochemicalAlgorithms
 using Graphs, SimpleWeightedGraphs, StatsBase, EnumX, DataFramesMeta
 
-export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preprocessing_df!
+export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preprocessing_df!, BondShortOrderType, BondShortOrder
 
 
 function PreprocessingMolecule!(mol::AbstractMolecule)
@@ -85,16 +85,7 @@ end
 
 
 function secondary_neighbors(mol_graph::Graph, num::Int)
-    SecNeighVec = Vector{Vector{Int}}()
-    for (k, neigh) in enumerate(neighbors(mol_graph, num))
-        append!(SecNeighVec, [[]])
-        for sec_neigh in neighbors(mol_graph, neigh)
-            if sec_neigh != num
-                push!(SecNeighVec[k], sec_neigh)
-            end
-        end
-    end
-    return SecNeighVec
+    return filter!(!(x -> x in neighborhood(mol_graph, num, 1)), neighborhood(mol_graph, num, 2))
 end
 
 
@@ -148,12 +139,12 @@ function create_atom_preprocessing_df!(mol::AbstractMolecule)
     col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "SecondaryNeighbors", 
                  "BondTypes", "CycleSize", "CycleListNum"]
     atom_props_df = DataFrame([Vector{Vector{String}}(), Vector{String}(), Vector{Vector{Int64}}(), 
-                            Vector{Vector{Vector{Int64}}}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
+                            Vector{Vector{Int64}}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Int64}}()], col_names)        
     
     for (k, atm) in enumerate(eachrow(mol.atoms))
         push!(atom_props_df, (Vector{String}(), string(), Vector{Int64}(), 
-                        Vector{Vector{Int64}}(), Vector{String}(), Vector{Int64}(), 
+                        Vector{Int64}(), Vector{String}(), Vector{Int64}(), 
                         Vector{Int64}()))
         for col in intersect(col_names, keys(atm.properties))
             atom_props_df[!,col][k] = atm.properties[col]
