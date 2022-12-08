@@ -15,13 +15,13 @@ end
 
 @testset "APS_processor" begin
     atmprops_df1 = DataFrameRow(DataFrame("BondTypes" => [["sb", "2sb", "db", "1db", "AR5", "RG3"]]), 1)
-    atmprops_df2 = DataFrameRow(DataFrame("BondTypes" => [["SB", "2SB", "DB", "1DB", "NG"]]), 1)
+    atmprops_df2 = DataFrameRow(DataFrame("BondTypes" => [["SB", "2SB", "DB", "1DB", "NR"]]), 1)
 
     def_file_col_string1 = "[sb,AR5,RG3]"
     def_file_col_string2 = "[sb,db,AR5,RG3]"
     def_file_col_string3 = "[db,AR5,RG3.RG6.RG12]"
-    def_file_col_string4 = "[DB,NG]"
-    def_file_col_string5 = "[SB,DB,1DL,NG.RG3.RG6.RG12]"
+    def_file_col_string4 = "[DB,NR]"
+    def_file_col_string5 = "[SB,DB,1DL,NR.RG3.RG6.RG12]"
     def_file_col_string6 = "[2SB,DB.DL.2DB]"
 
     @test APS_processor(def_file_col_string1, atmprops_df1) == true
