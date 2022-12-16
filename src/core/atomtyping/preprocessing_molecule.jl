@@ -139,7 +139,11 @@ end
 
 function create_atom_preprocessing_df!(mol::AbstractMolecule)
     # Create DataFrame for better accessibility and handling of atom properties 
-    if !haskey(mol.atoms.properties[1], "ElementWithNeighborCount")
+    if !all(in(keys(mol.atoms.properties[1])).(["AromaticityType", "ElementWithNeighborCount", 
+            "Neighbors", "SecondaryNeighbors", "BondTypes", "CycleSize", "CycleListNum"])) || 
+            !all(in(keys(mol.properties)).(["mol_graph", "adjacency_matrix", "mol_weighted_graph", 
+            "weighted_graph_adj_matrix", "chem_cycle_list", "ring_intersections_matrix", 
+            "ring_class_list", "atom_aromaticity_list"]))
         println("Running PreprocessingMolecule! on $(mol.name)")
         ClearPreprocessingMolecule!(mol)
         PreprocessingMolecule!(mol)
