@@ -154,6 +154,7 @@ function create_atom_preprocessing_df!(mol::AbstractMolecule)
             atom_props_df[!,col][k] = atm.properties[col]
         end
     end
+    mol.properties["atmprops_df"] = atom_props_df
     return atom_props_df
 end
 
