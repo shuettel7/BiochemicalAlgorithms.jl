@@ -41,8 +41,8 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                     if colnum == 5 && APS_processor(coldata, atmprops_df[i,:])
                         match_list[colnum] = 1
                     end
-                    if colnum == 6 && CES_processor(CES_parser(coldata), atmprops_df[i,:], mol, i)
-                        match_list[colnum] = 2
+                    if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df[i,:], mol, i)
+                        match_list[colnum] = 1
                     end
                 end
             end

@@ -3,20 +3,16 @@ using BiochemicalAlgorithms
 export CES_parser, CES_processor, path_builder
 
 
-function path_builder(CES_df::DataFrame, cesAtomId::Int, path::Vector{Int})
-    nextAtomId_list = CES_df[(CES_df.AtomId .== cesAtomId), :ContainsAtomId][1]
-    if isempty(nextAtomId_list)
-        return path
-    end
+function path_builder(CES_df::DataFrame, previousCesAtomIds::Vector{Int})
+    nextAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[end]), :ContainsAtomId][1]
     all_paths = Vector{Vector{Int}}()
-    push!(all_paths, path_builder(CES_df, nextAtomId_list[1], append!(path, nextAtomId_list[1])))
-    # for nextAtomId in nextAtomId_list
-    #     path_builder(CES_df, nextAtomId, path)
-    #     append!(path, nextAtomId, path_builder)
-    #     push!(all_paths, path)
-    #     empty!(path)
-    # end
-    println(all_paths)
+    if isempty(nextAtomId_list)
+        push!(all_paths, previousCesAtomIds)
+        return all_paths
+    end
+    for nextAtomId in nextAtomId_list
+        append!(all_paths, path_builder(CES_df, append!(previousCesAtomIds, nextAtomId)))
+    end
     return all_paths
 end
 
