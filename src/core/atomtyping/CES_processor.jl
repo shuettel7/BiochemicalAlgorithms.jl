@@ -1,9 +1,27 @@
 using BiochemicalAlgorithms
 
-export CES_parser, CES_processor
+export CES_parser, CES_processor, path_builder
 
 
-function CES_parser(colstring::String)
+function path_builder(CES_df::DataFrame, cesAtomId::Int, path::Vector{Int})
+    nextAtomId_list = CES_df[(CES_df.AtomId .== cesAtomId), :ContainsAtomId][1]
+    if isempty(nextAtomId_list)
+        return path
+    end
+    all_paths = Vector{Vector{Int}}()
+    push!(all_paths, path_builder(CES_df, nextAtomId_list[1], append!(path, nextAtomId_list[1])))
+    # for nextAtomId in nextAtomId_list
+    #     path_builder(CES_df, nextAtomId, path)
+    #     append!(path, nextAtomId, path_builder)
+    #     push!(all_paths, path)
+    #     empty!(path)
+    # end
+    println(all_paths)
+    return all_paths
+end
+
+
+function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int)
     
     open_chars_list = ['(', '[', '<']
     close_chars_list = [')', ']', '>']
@@ -13,14 +31,21 @@ function CES_parser(colstring::String)
 
     bracket_logic_list = findall(x -> x in vcat(open_chars_list,close_chars_list,logic_chars), colstring)
     
-    layers_df = DataFrame([Vector{Int}(), Vector{Int}(), Vector{Union{Int,String}}(), 
-                            Vector{String}(), Vector{Int}(), Vector{String}(), 
-                            Vector{String}(), Vector{Int}(), Vector{Vector{Int}}()],
-                        ["LayerId", "LayerDepth", "GenericName", "Element", "NumNeighbors", "ElementWithNeighborCount", 
-                            "CES_APS", "SourceRowNum", "ContainsLayerId"])
+    layers_df = DataFrame([Vector{Int}(), Vector{Int}(), Vector{String}(), Vector{String}(),
+                            Vector{Union{Int,String}}(), Vector{String}(), Vector{String}(),  
+                            Vector{Union{Int,String}}(), Vector{Vector{Int}}()],
+                        ["AtomId", "LayerDepth", "GenericName", "Element", "NumNeighbors", "ElementWithNeighborCount", 
+                            "CES_APS", "SourceRowNum", "ContainsAtomId"])
+
     layer = 0
     layer_id = 0
     in_APS_bool = false
+    sourceMolGraph = mol.properties["mol_graph"]
+    sourceElemWNeighCount = mol.properties["atmprops_df"].ElementWithNeighborCount[sourceAtomNum]
+    push!(layers_df, (layer, layer_id, "", enumToString(mol.atoms.element[sourceAtomNum]), 
+            lastindex(neighbors(sourceMolGraph, sourceAtomNum)), 
+            sourceElemWNeighCount, "", "", []))
+    
     for (i,strindex) in enumerate(colstring[bracket_logic_list]) 
         if strindex == '['
             in_APS_bool = true
@@ -47,11 +72,9 @@ function CES_parser(colstring::String)
             push!(layers_df, (layer_id, layer, generic_name, curr_element, num_neighbors, 
                                 string(curr_element, num_neighbors), ces_APS_substring, 0, []))
             
-            if layer > 1 
-                owner_layer_df = layers_df[(layers_df.LayerDepth .== layer-1), :]
-                layers_df.SourceRowNum[nrow(layers_df)] = owner_layer_df.LayerId[nrow(owner_layer_df)]
-                push!(owner_layer_df.ContainsLayerId[nrow(owner_layer_df)], layers_df.LayerId[nrow(layers_df)])
-            end
+            owner_layer_df = layers_df[(layers_df.LayerDepth .== layer-1), :]
+            layers_df.SourceRowNum[nrow(layers_df)] = owner_layer_df.AtomId[nrow(owner_layer_df)]
+            push!(owner_layer_df.ContainsAtomId[nrow(owner_layer_df)], layers_df.AtomId[nrow(layers_df)])
         elseif strindex == ')'
             layer -= 1
         elseif strindex == '['
@@ -77,7 +100,7 @@ function CES_processor(cesColdata::DataFrame, atmprops_df::DataFrameRow, mol::Ab
     startlayer_list = DataFrame(cesColdata[(cesColdata.LayerDepth .== 1), :])
     molecule_paths_vecs = Vector{Vector{Union{Int, Bool}}}()
     for (iter, layerItem) in enumerate(eachrow(startlayer_list))
-        push!(molecule_paths_vecs, path_checker(cesColdata, atmprops_df, mol, i, i, layerItem.LayerId, 1))
+        push!(molecule_paths_vecs, path_checker(cesColdata, atmprops_df, mol, i, i, layerItem.AtomId, 1))
     end
     if !isempty(filter(x -> x > 1, values(countmap(molecule_paths_vecs)))) || !isempty(filter(x -> in(x).(false), molecule_paths_vecs))
         return false
@@ -96,7 +119,7 @@ function path_checker(cesColdata::DataFrame, atmprops_df::DataFrameRow, mol::Abs
     # DataFrame with ID/number, Element, and number of neighbors of the currently spectated atoms
     atm_df = DataFrame("AtmNum" => relSourceAtm, "Element" => enumToString(mol.atoms.element[relSourceAtm]), "NumNeighbors" => lastindex(neighbors(mol_graph, relSourceAtm)))
     cesRow = cesColdata[cesAtomId,:]
-    next_cesAtoms = cesRow.ContainsLayerId
+    next_cesAtoms = cesRow.ContainsAtomId
 
     # Path, list of atoms in chain in molecule resembling the CES 
     path_lists = Vector{Vector{Union{Int, Bool}}}()
@@ -139,7 +162,7 @@ function path_checker(cesColdata::DataFrame, atmprops_df::DataFrameRow, mol::Abs
     ### for BFS use this for loop here
     # for listnum in 1:lastindex(ces_potential_partners_list) 
     #     for nextAtm in ces_potential_partners_list[listnum]
-    #         return path_checker(cesColdata, atmprops_df, mol, absSourceAtm, nextAtm, layerrow.ContainsLayerId, depth+1)
+    #         return path_checker(cesColdata, atmprops_df, mol, absSourceAtm, nextAtm, layerrow.ContainsAtomId, depth+1)
     #     end
     # end
 end
