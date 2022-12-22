@@ -3,20 +3,6 @@ using BiochemicalAlgorithms
 export CES_parser, CES_processor, path_builder
 
 
-function path_builder(CES_df::DataFrame, previousCesAtomIds::Vector{Int})
-    nextAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[end]), :ContainsAtomId][1]
-    all_paths = Vector{Vector{Int}}()
-    if isempty(nextAtomId_list)
-        push!(all_paths, previousCesAtomIds)
-        return all_paths
-    end
-    for nextAtomId in nextAtomId_list
-        append!(all_paths, path_builder(CES_df, append!(previousCesAtomIds, nextAtomId)))
-    end
-    return all_paths
-end
-
-
 function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int)
     
     open_chars_list = ['(', '[', '<']
@@ -106,61 +92,52 @@ function CES_processor(cesColdata::DataFrame, atmprops_df::DataFrameRow, mol::Ab
 end
 
 
-function path_checker(cesColdata::DataFrame, atmprops_df::DataFrameRow, mol::AbstractMolecule, absSourceAtm::Int, relSourceAtm::Int, cesAtomId::Int, depth::Int)
+function path_checker(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::AbstractMolecule, absSourceAtm::Int, depth::Int)
+    nextCesAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
     mol_graph = mol.properties["mol_graph"]
+    
+    filtered_atm_paths = Vector{Vector{Int}}()
 
     # List of current neighbor atoms at certain depth/distance from source 
-    curr_atm_neighbors = filter(x -> !(x in neighborhood(mol_graph, absSourceAtm, depth-1)) && x in neighbors(mol_graph, relSourceAtm), neighborhood(mol_graph, absSourceAtm, depth))
+    curr_atm_neighbors = filter(x -> !(x in neighborhood(mol_graph, absSourceAtm, depth-1)) && 
+                                x in neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)]), 
+                                neighborhood(mol_graph, absSourceAtm, depth))
     
-    # DataFrame with ID/number, Element, and number of neighbors of the currently spectated atoms
-    atm_df = DataFrame("AtmNum" => relSourceAtm, "Element" => enumToString(mol.atoms.element[relSourceAtm]), "NumNeighbors" => lastindex(neighbors(mol_graph, relSourceAtm)))
-    cesRow = cesColdata[cesAtomId,:]
-    next_cesAtoms = cesRow.ContainsAtomId
+    cesRow = CES_df[previousCesAtomIds[lastindex(previousCesAtomIds)],:]
 
-    # Path, list of atoms in chain in molecule resembling the CES 
-    path_lists = Vector{Vector{Union{Int, Bool}}}()
+    # create an expression that evaluates by elements and number of neighbors if demanded
+    check_expr = Expr(:&&)
+    # Element properties check
+    if in(keys(XX_XA_XB_XD_dict)).(cesRow.Element)
+        push!(check_expr.args, in(XX_XA_XB_XD_dict[cesRow.Element]).(enumToString(mol.atoms.element[atmPath_vec[lastindex[atmPath_vec]]])))
+    elseif !isempty(cesRow.Element) 
+        push!(check_expr.args, cesRow.Element == enumToString(mol.atoms.element[atmPath_vec[lastindex[atmPath_vec]]]))
+    end
+    # check number of neigbors
+    if !isempty(cesRow.NumNeighbors)
+        push!(check_expr.args, cesRow.NumNeighbors == lastindex(neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)])))
+    end
+    # check CES_APS against that of current atom
+    push!(check_expr.args, CES_APS_processor(cesRow.CES_APS, atmprops_df, atmPath_vec[lastindex[atmPath_vec]], 
+                                                atmPath_vec[lastindex[atmPath_vec]-1], mol))
+    # evaluate the built expression to a boolean
+    check_Bool = eval(check_expr)
 
-    # compare and filter by elements and number of neighbors
-    if isempty(cesRow.Element) && !isempty(cesRow.NumNeighbors)
-        atm_df = atm_df[(atm_df.Element .== cesRow.Element),:]
-    elseif !isempty(cesRow.Element) && isempty(cesRow.NumNeighbors)
-        atm_df = atm_df[(atm_df.NumNeighbors .== cesRow.NumNeighbors),:]
-    elseif !isempty(cesRow.Element) && !isempty(cesRow.NumNeighbors)
-        atm_df = atm_df[(atm_df.NumNeighbors .== cesRow.NumNeighbors .&& atm_df.Element .== cesRow.Element),:]
+    # return if last there are no following links in CES
+    if isempty(cesRow.ContainsAtomId) && check_Bool
+        push!(filtered_atm_paths, atmPath_vec)
+        return filtered_atm_paths
     end
 
-    # compare and check the CES_APS properties against the potential atoms of the molecule
-    if !isempty(atm_df)
-        for atm_num in atm_df.AtmNum
-            push!(path_lists, [])
-            # if there are matching atoms, check if there is a demanded CES_APS
-            CES_APS_check = CES_APS_processor(cesRow.CES_APS, atmprops_df, atm_num, relSourceAtm, mol)
-            
-            if CES_APS_check && isempty(next_cesAtoms)
-                return [atm_num]
-            elseif CES_APS_check && !isempty(next_cesAtoms)
-                for (cesIter, nextCesAtom) in enumerate(next_cesAtoms)
-                    # for each matching atom to a given ces_aps, add the atom.number to the path_list
-                    if CES_APS_check && !isempty(next_cesAtoms)
-                        append!(path_lists, path_checker(cesColdata, atmprops_df, mol, absSourceAtm, atm_num, nextCesAtom, depth+1))
-                    elseif !CES_APS_check
-                        append!(path_lists, false)
-                    end
-                end
-            elseif !CES_APS_check
-                return [false]
+    # start next instance of function if path is correct so far
+    if check_Bool
+        for atm_neigh in curr_atm_neighbors
+            for nextCesAtom in nextCesAtomId_list
+                append!(filtered_atm_paths, path_checker(CES_df, atmprops_df, vcat(previousCesAtomIds, [nextCesAtom]), vcat(atmPath_vec, [atm_neigh]), mol, absSourceAtm, depth+1))
             end
         end
     end
-    println("ping1")
-    return filter(x -> !in(x).(false), path_lists)
-    
-    ### for BFS use this for loop here
-    # for listnum in 1:lastindex(ces_potential_partners_list) 
-    #     for nextAtm in ces_potential_partners_list[listnum]
-    #         return path_checker(cesColdata, atmprops_df, mol, absSourceAtm, nextAtm, layerrow.ContainsAtomId, depth+1)
-    #     end
-    # end
+    return filtered_atm_paths
 end
 
 
