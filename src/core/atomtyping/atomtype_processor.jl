@@ -3,9 +3,8 @@ using BiochemicalAlgorithms, DataFramesMeta, DataFrames
 export get_molecule_atomtypes!, count_EWG
 
 function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
-    PreprocessingMolecule!(mol)
-    atmprops_df = create_atom_preprocessing_df!(mol)
     def_file_df = load_atomtyping_DEF(mapfile)
+    atmprops_df = mol.properties["atmprops_df"]
     
     # loop over atoms, prefilter dataframe by element and neighbor count
     for i = (1:nrow(mol.atoms))
