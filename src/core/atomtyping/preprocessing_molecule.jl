@@ -1,7 +1,7 @@
 using BiochemicalAlgorithms
 using Graphs, SimpleWeightedGraphs, StatsBase, EnumX, DataFramesMeta
 
-export PreprocessingMolecule!, ClearPreprocessingMolecule!, create_atom_preprocessing_df!, BondShortOrderType, BondShortOrder
+export PreprocessingMolecule!, ClearPreprocessingMolecule!
 
 
 function PreprocessingMolecule!(mol::AbstractMolecule)
@@ -63,6 +63,8 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
             push!.(:properties, "TRIPOS_tag" => "am")
         end
     end
+
+    push!(mol.properties, "atmprops_df" => create_atom_preprocessing_df!(mol))
 end
 
 
@@ -108,7 +110,7 @@ function ClearPreprocessingMolecule!(mol::AbstractMolecule)
     mol_props_names = ["mol_graph", "adjacency_matrix", "mol_weighted_graph", 
                         "weighted_graph_adj_matrix", "chem_cycle_list", 
                         "ring_intersections_matrix", "ring_class_list", 
-                        "atom_aromaticity_list"]
+                        "atom_aromaticity_list", "atmprops_df"]
     atom_props_names = ["CycleListNum", "CycleSize", "ElementWithNeighborCount",
                         "AromaticityType", "BondTypes", "Neighbors", "SecondaryNeighbors"]
     bond_props_names = ["TRIPOS_tag"]
@@ -130,16 +132,7 @@ end
 
 function create_atom_preprocessing_df!(mol::AbstractMolecule)
     # Create DataFrame for better accessibility and handling of atom properties 
-    if !all(in(keys(mol.atoms.properties[1])).(["AromaticityType", "ElementWithNeighborCount", 
-            "Neighbors", "SecondaryNeighbors", "BondTypes", "CycleSize", "CycleListNum"])) || 
-            !all(in(keys(mol.properties)).(["mol_graph", "adjacency_matrix", "mol_weighted_graph", 
-            "weighted_graph_adj_matrix", "chem_cycle_list", "ring_intersections_matrix", 
-            "ring_class_list", "atom_aromaticity_list"]))
-        println("Running PreprocessingMolecule! on $(mol.name)")
-        ClearPreprocessingMolecule!(mol)
-        PreprocessingMolecule!(mol)
-    end
-
+    
     col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "SecondaryNeighbors", 
                  "BondTypes", "CycleSize", "CycleListNum"]
     atom_props_df = DataFrame([Vector{Vector{String}}(), Vector{String}(), Vector{Vector{Int64}}(), 
@@ -302,10 +295,15 @@ end
 
 @enumx BondShortOrder begin
     sb = 1
+    SB = 1
     db = 2
-    tb = 3 
+    DB = 2
+    tb = 3
+    TB = 3 
     qb = 4
+    QB = 4
     un = 100
+    UN = 100
 end
 
 const BondShortOrderType = BondShortOrder.T
