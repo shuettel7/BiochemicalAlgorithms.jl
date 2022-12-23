@@ -1,7 +1,5 @@
 using BiochemicalAlgorithms
 
-export CES_parser, CES_processor, path_builder
-
 
 function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int)
     
@@ -43,7 +41,7 @@ function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int
             curr_element = filter(!isnumeric, substring)
             if isempty(filter(isnumeric, substring)) || contains(substring, "dd")
                 num_neighbors = ""
-                if curr_element[lastindex(curr_element)-1:lastindex(curr_element)] == "dd"
+                if contains(substring, "dd")
                     curr_element = chop(curr_element, tail = 2)
                 end
             else
@@ -69,33 +67,47 @@ function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int
 end
 
 
-function CES_processor(cesColdata::DataFrame, atmprops_df::DataFrameRow, mol::AbstractMolecule, i::Int)
+function CES_processor(CES_df::DataFrame, atmprops_df::DataFrameRow, mol::AbstractMolecule, atomnum::Int)
     # use DEF file and information from CES_parser process to cycle through
     # DEF file until Atomtype is assigned or no more criteria fit (return error?)
 
+    all_possible_paths = path_builder(CES_df, atmprops_df, [0], [atomnum], mol, atomnum, 0)
+    # println(CES_df)
+    if !isempty(all_possible_paths)
+        println(all_possible_paths)        
+    end
+    return path_checker(CES_df, all_possible_paths)
+end
+
+
+function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
+    if isempty(allPossiblePaths)
+        return false
+    elseif lastindex(countmap(allPossiblePaths)) != lastindex(allPossiblePaths)
+        return false
+    elseif number_of_ces_paths(CES_df) > lastindex(allPossiblePaths)
+        return false 
+    end
+    return true
+end
+
+
+function number_of_ces_paths(CES_df::DataFrame)
+    return lastindex(filter(x -> isempty(x), CES_df.ContainsAtomId))
+end
+
+
+function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::AbstractMolecule, absSourceAtm::Int, depth::Int)
+    # build the atom paths while checking for the CES demands, return Vector of all Paths which are stored as a Vector{Int}
+    nextCesAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
+    cesRow = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]),:]
+    mol_graph = mol.properties["mol_graph"]
+    
     XX_XA_XB_XD_dict = Dict("XX" => [Elements.C, Elements.N, Elements.O, Elements.S, Elements.P],
                             "XA" => [Elements.S, Elements.O],
                             "XB" => [Elements.N, Elements.P],
                             "XD" => [Elements.S, Elements.P])
-    
-    ### Path checker
-    startlayer_list = DataFrame(cesColdata[(cesColdata.LayerDepth .== 1), :])
-    molecule_paths_vecs = Vector{Vector{Union{Int, Bool}}}()
-    for (iter, layerItem) in enumerate(eachrow(startlayer_list))
-        push!(molecule_paths_vecs, path_checker(cesColdata, atmprops_df, mol, i, i, layerItem.AtomId, 1))
-    end
-    if !isempty(filter(x -> x > 1, values(countmap(molecule_paths_vecs)))) || !isempty(filter(x -> in(x).(false), molecule_paths_vecs))
-        return false
-    else
-        return true
-    end
-end
 
-
-function path_checker(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::AbstractMolecule, absSourceAtm::Int, depth::Int)
-    nextCesAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
-    mol_graph = mol.properties["mol_graph"]
-    
     filtered_atm_paths = Vector{Vector{Int}}()
 
     # List of current neighbor atoms at certain depth/distance from source 
@@ -103,28 +115,32 @@ function path_checker(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
                                 x in neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)]), 
                                 neighborhood(mol_graph, absSourceAtm, depth))
     
-    cesRow = CES_df[previousCesAtomIds[lastindex(previousCesAtomIds)],:]
-
     # create an expression that evaluates by elements and number of neighbors if demanded
     check_expr = Expr(:&&)
     # Element properties check
-    if in(keys(XX_XA_XB_XD_dict)).(cesRow.Element)
-        push!(check_expr.args, in(XX_XA_XB_XD_dict[cesRow.Element]).(enumToString(mol.atoms.element[atmPath_vec[lastindex[atmPath_vec]]])))
+    if in(keys(XX_XA_XB_XD_dict)).(cesRow.Element[1])
+        push!(check_expr.args, in(XX_XA_XB_XD_dict[cesRow.Element[1]]).(mol.atoms.element[atmPath_vec[lastindex(atmPath_vec)]]))
     elseif !isempty(cesRow.Element) 
-        push!(check_expr.args, cesRow.Element == enumToString(mol.atoms.element[atmPath_vec[lastindex[atmPath_vec]]]))
+        push!(check_expr.args, (cesRow.Element[1] == enumToString(mol.atoms.element[atmPath_vec[lastindex(atmPath_vec)]])))
     end
+    # println(check_expr, "   ", cesRow.Element[1], " ", enumToString(mol.atoms.element[atmPath_vec[lastindex(atmPath_vec)]]))
     # check number of neigbors
     if !isempty(cesRow.NumNeighbors)
         push!(check_expr.args, cesRow.NumNeighbors == lastindex(neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)])))
     end
     # check CES_APS against that of current atom
-    push!(check_expr.args, CES_APS_processor(cesRow.CES_APS, atmprops_df, atmPath_vec[lastindex[atmPath_vec]], 
-                                                atmPath_vec[lastindex[atmPath_vec]-1], mol))
+    if lastindex(atmPath_vec) > 1
+        push!(check_expr.args, CES_APS_processor(cesRow.CES_APS, atmprops_df, atmPath_vec[lastindex(atmPath_vec)], 
+                                                atmPath_vec[lastindex(atmPath_vec)-1], mol))
+        println(CES_APS_processor(cesRow.CES_APS, atmprops_df, atmPath_vec[lastindex(atmPath_vec)], 
+        atmPath_vec[lastindex(atmPath_vec)-1], mol))
+    end
+    
     # evaluate the built expression to a boolean
     check_Bool = eval(check_expr)
 
     # return if last there are no following links in CES
-    if isempty(cesRow.ContainsAtomId) && check_Bool
+    if isempty(cesRow.ContainsAtomId[1]) && check_Bool
         push!(filtered_atm_paths, atmPath_vec)
         return filtered_atm_paths
     end
@@ -133,7 +149,8 @@ function path_checker(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
     if check_Bool
         for atm_neigh in curr_atm_neighbors
             for nextCesAtom in nextCesAtomId_list
-                append!(filtered_atm_paths, path_checker(CES_df, atmprops_df, vcat(previousCesAtomIds, [nextCesAtom]), vcat(atmPath_vec, [atm_neigh]), mol, absSourceAtm, depth+1))
+                println(nextCesAtom)
+                append!(filtered_atm_paths, path_builder(CES_df, atmprops_df, vcat(previousCesAtomIds, [nextCesAtom]), vcat(atmPath_vec, [atm_neigh]), mol, absSourceAtm, depth+1))
             end
         end
     end
@@ -150,6 +167,7 @@ function CES_APS_processor(colstring::String, atmprops_df::DataFrameRow, curr_at
         return true
     end
 
+    println("CES colstring:    ", colstring)
     and_list = split(colstring, ',')
     and_expr_conditionals = Expr(:&&)
 
@@ -159,7 +177,9 @@ function CES_APS_processor(colstring::String, atmprops_df::DataFrameRow, curr_at
             or_expr_conditionals = Expr(:||)
             for orItem in or_list
                 if contains(orItem, '\'')
-                    push!(or_expr_conditionals.args, :(enumToString(BondShortOrderType(mol.properties["weighted_graph_adj_matrix"][curr_atom, pre_atom]) == orItem[1:lastindex(orItem)-1])))
+                    println()
+                    push!(or_expr_conditionals.args, :(enumToString(BondShortOrderType(mol.properties["weighted_graph_adj_matrix"][curr_atom, pre_atom])) == chop(orItem)),
+                    :(uppercase(enumToString(BondShortOrderType(mol.properties["weighted_graph_adj_matrix"][curr_atom, pre_atom]) == chop(orItem)))))
                 else
                     push!(or_expr_conditionals.args, :(in($(atmprops_df.BondTypes)).($orItem)))
                 end
