@@ -71,7 +71,7 @@ function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph,
     bonds_dict = countmap(wgraph_adj_matrix[num, neighbors(mol_graph, num)])
     for i in keys(bonds_dict)
         curr_bond_str = enumToString(BondShortOrderType(Int(i)))
-        if !in(mol.properties["atom_aromaticity_list"][num]).("NG") && !in(mol.properties["atom_aromaticity_list"][num]).("AR5")
+        if !in(mol.properties["atom_aromaticity_list"][num]).("NR") && !in(mol.properties["atom_aromaticity_list"][num]).("AR5")
             push!(BondShortVec, curr_bond_str, string(bonds_dict[i], curr_bond_str))
         else
             push!(BondShortVec, uppercase(curr_bond_str), string(bonds_dict[i], uppercase(curr_bond_str)))
@@ -209,7 +209,7 @@ end
 function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
     atom_ring_class_list = Vector{Vector{String}}(undef, nrow(mol.atoms))
     for i = (1:nrow(mol.atoms))
-        atom_ring_class_list[i] = ["NG"]
+        atom_ring_class_list[i] = ["NR"]
     end
     for (numvlist, vlist) in enumerate(LList)
 
