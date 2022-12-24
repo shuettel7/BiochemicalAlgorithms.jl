@@ -19,6 +19,7 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
         mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_list)
     end
     mol.properties["atom_aromaticity_list"] = atom_aromaticity_list = atom_aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
+    mol.properties["atom_conjugated_system_list"] = atom_conjugated_system_list = atom_conjugated_system_processor(chem_cycle_list, wgraph_adj_matrix, mol)
     mol.properties["ring_class_list"] = ring_class_list = ring_aromaticity_type_processor(chem_cycle_list, wgraph_adj_matrix, ring_intersections_matrix, mol)
 
     ### Assign Cycle/Ring properties to Atoms and Bonds
@@ -68,12 +69,40 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 end
 
 
+function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, mol::AbstractMolecule)
+    mol_graph = mol.properties["mol_graph"]
+    all_cycle_atoms = Vector{Int}()
+    ret_vec = Vector{Int}()
+    for sublist in LList
+        all_cycle_atoms = vcat(all_cycle_atoms, sublist)
+    end
+    filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& mol.bonds.order .== BondOrder.Double), :]
+    possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2)))
+    for atmNum in possible_conjugated_atoms
+        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && 
+            countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])[2.0] >= 1
+            number_of_conjugatable_neighbors = 0
+            for neigh in neighbors(mol_graph, atmNum)
+                if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[neigh]) && 
+                    countmap(mol.properties["weighted_graph_adj_matrix"][neigh, neighbors(mol_graph, neigh)])[2.0] >= 1
+                    number_of_conjugatable_neighbors += 1
+                end
+            end
+            if number_of_conjugatable_neighbors >= 2
+                push!(ret_vec, atmNum)
+            end
+        end
+    end
+    return ret_vec
+end
+
+
 function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph, wgraph_adj_matrix::Graphs.SparseMatrix)
     BondShortVec = Vector{String}()
     bonds_dict = countmap(wgraph_adj_matrix[num, neighbors(mol_graph, num)])
     for i in keys(bonds_dict)
         curr_bond_str = enumToString(BondShortOrderType(Int(i)))
-        if !in(mol.properties["atom_aromaticity_list"][num]).("NR") && !in(mol.properties["atom_aromaticity_list"][num]).("AR5")
+        if !in(mol.properties["atom_aromaticity_list"][num]).("NR") && !in(mol.properties["atom_aromaticity_list"][num]).("AR5") || in(mol.properties["atom_conjugated_system_list"]).(num)
             push!(BondShortVec, curr_bond_str, string(bonds_dict[i], curr_bond_str))
         else
             push!(BondShortVec, uppercase(curr_bond_str), string(bonds_dict[i], uppercase(curr_bond_str)))
@@ -81,6 +110,9 @@ function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph,
     end
     for prop in mol.properties["atom_aromaticity_list"][num]
         push!(BondShortVec, prop)
+    end
+    if in(mol.properties["atom_conjugated_system_list"]).(num)
+        push!(BondShortVec, "DL")
     end
     return BondShortVec
 end
@@ -119,7 +151,7 @@ function ClearPreprocessingMolecule!(mol::AbstractMolecule)
     mol_props_names = ["mol_graph", "adjacency_matrix", "mol_weighted_graph", 
                         "weighted_graph_adj_matrix", "chem_cycle_list", 
                         "ring_intersections_matrix", "ring_class_list", 
-                        "atom_aromaticity_list", "atmprops_df"]
+                        "atom_aromaticity_list", "atmprops_df", "atom_conjugated_system_list"]
     atom_props_names = ["CycleListNum", "CycleSize", "ElementWithNeighborCount",
                         "AromaticityType", "BondTypes", "Neighbors", "SecondaryNeighbors"]
     bond_props_names = ["TRIPOS_tag"]
@@ -156,7 +188,6 @@ function create_atom_preprocessing_df!(mol::AbstractMolecule)
             atom_props_df[!,col][k] = atm.properties[col]
         end
     end
-    mol.properties["atmprops_df"] = atom_props_df
     return atom_props_df
 end
 
@@ -304,15 +335,10 @@ end
 
 @enumx BondShortOrder begin
     sb = 1
-    SB = 1
     db = 2
-    DB = 2
-    tb = 3
-    TB = 3 
+    tb = 3 
     qb = 4
-    QB = 4
     un = 100
-    UN = 100
 end
 
 const BondShortOrderType = BondShortOrder.T
