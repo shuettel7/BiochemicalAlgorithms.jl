@@ -1,5 +1,3 @@
-using BiochemicalAlgorithms
-
 
 function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int)
     
@@ -78,12 +76,13 @@ end
 
 
 function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
-    if isempty(allPossiblePaths)
+    if number_of_ces_paths(CES_df) > lastindex(allPossiblePaths)
+        return false 
+    elseif isempty(allPossiblePaths)
         return false
     elseif length(keys(countmap(allPossiblePaths))) != lastindex(allPossiblePaths)
+        # if two paths are the same and should be different
         return false
-    elseif number_of_ces_paths(CES_df) > lastindex(allPossiblePaths)
-        return false 
     end
     return true
 end
@@ -96,7 +95,6 @@ end
 
 function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::AbstractMolecule, absSourceAtm::Int, depth::Int)
     # build the atom paths while checking for the CES demands, return Vector of all Paths which are stored as a Vector{Int}
-    nextCesAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
     cesRow = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]),:]
     mol_graph = mol.properties["mol_graph"]
     
@@ -106,14 +104,10 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
                             "XD" => [Elements.S, Elements.P])
 
     filtered_atm_paths = Vector{Vector{Int}}()
-
-    # List of current neighbor atoms at certain depth/distance from source 
-    curr_atm_neighbors = filter(x -> !(x in neighborhood(mol_graph, absSourceAtm, depth)) && 
-                                x in neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)]), 
-                                neighborhood(mol_graph, absSourceAtm, depth+1))
     
     # create an expression that evaluates by elements and number of neighbors if demanded
     check_expr = Expr(:&&)
+
     # Element properties check
     if in(keys(XX_XA_XB_XD_dict)).(cesRow.Element[1])
         push!(check_expr.args, in(XX_XA_XB_XD_dict[cesRow.Element[1]]).(mol.atoms.element[atmPath_vec[lastindex(atmPath_vec)]]))
@@ -125,6 +119,7 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
     if !isempty(cesRow.NumNeighbors[1])
         push!(check_expr.args, cesRow.NumNeighbors[1] == lastindex(neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)])))
     end
+
     # check CES_APS against that of current atom
     if lastindex(atmPath_vec) > 1
         push!(check_expr.args, CES_APS_processor(cesRow.CES_APS[1], atmprops_df, atmPath_vec[lastindex(atmPath_vec)], 
@@ -142,9 +137,15 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
 
     # start next instance of function if path is correct so far
     if check_Bool
+        # List of current neighbor atoms at certain depth/distance from source 
+        curr_atm_neighbors = filter(x -> !(x in neighborhood(mol_graph, absSourceAtm, depth)) && 
+                                    x in neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)]), 
+                                    neighborhood(mol_graph, absSourceAtm, depth+1))
+        nextCesAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
         for atm_neigh in curr_atm_neighbors
             for nextCesAtom in nextCesAtomId_list
-                append!(filtered_atm_paths, path_builder(CES_df, atmprops_df, vcat(previousCesAtomIds, [nextCesAtom]), vcat(atmPath_vec, [atm_neigh]), mol, absSourceAtm, depth+1))
+                append!(filtered_atm_paths, path_builder(CES_df, atmprops_df, vcat(previousCesAtomIds, [nextCesAtom]), 
+                        vcat(atmPath_vec, [atm_neigh]), mol, absSourceAtm, depth+1))
             end
         end
     end
