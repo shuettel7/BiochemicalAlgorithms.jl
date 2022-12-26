@@ -80,8 +80,8 @@ function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
         return false 
     elseif isempty(allPossiblePaths)
         return false
-    elseif length(keys(countmap(allPossiblePaths))) != lastindex(allPossiblePaths)
-        # if two paths are the same and should be different
+    elseif length(countmap(allPossiblePaths)) != lastindex(allPossiblePaths) && !(length(countmap(allPossiblePaths)) == number_of_ces_paths(CES_df))
+        # if two paths are the same and should be different, but also not same length of the searched paths
         return false
     end
     return true
@@ -101,6 +101,7 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
     XX_XA_XB_XD_dict = Dict("XX" => [Elements.C, Elements.N, Elements.O, Elements.S, Elements.P],
                             "XA" => [Elements.S, Elements.O],
                             "XB" => [Elements.N, Elements.P],
+                            "XC" => [Elements.F, Elements.Cl, Elements.I, Elements.Br],
                             "XD" => [Elements.S, Elements.P])
 
     filtered_atm_paths = Vector{Vector{Int}}()
@@ -119,13 +120,13 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
     if !isempty(cesRow.NumNeighbors[1])
         push!(check_expr.args, cesRow.NumNeighbors[1] == lastindex(neighbors(mol_graph, atmPath_vec[lastindex(atmPath_vec)])))
     end
-
+    
     # check CES_APS against that of current atom
     if lastindex(atmPath_vec) > 1
         push!(check_expr.args, CES_APS_processor(cesRow.CES_APS[1], atmprops_df, atmPath_vec[lastindex(atmPath_vec)], 
                                                 atmPath_vec[lastindex(atmPath_vec)-1], mol))
     end
-    
+
     # evaluate the built expression to a boolean
     check_Bool = eval(check_expr)
 
@@ -174,10 +175,10 @@ function CES_APS_processor(colstring::String, atmprops_df::DataFrameRow, curr_at
             or_expr_conditionals = Expr(:||)
             for orItem in or_list
                 if contains(orItem, '\'')
-                    push!(or_expr_conditionals.args, :($bond_symbol_string == chop($orItem)),
-                    :(uppercase($bond_symbol_string) == chop($orItem)))
+                    push!(or_expr_conditionals.args, bond_symbol_string == chop(orItem),
+                    uppercase(bond_symbol_string) == chop(orItem))
                 else
-                    push!(or_expr_conditionals.args, :(in($(atmprops_df.BondTypes)).($orItem)))
+                    push!(or_expr_conditionals.args, in(atmprops_df.BondTypes).(orItem))
                 end
             end
             if eval(or_expr_conditionals) == false
