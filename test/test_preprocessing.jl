@@ -2,7 +2,7 @@
 @testset "Preprocessing_Molecule" begin
     mol = load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
     PreprocessingMolecule!(mol)
-    @test length(mol.properties) == 10
+    @test length(mol.properties) == 9
     @test length(mol.atoms.properties) == count_atoms(mol)
     @test length(mol.bonds.properties) == count_bonds(mol)
     @test length(mol.atoms.properties[20]) == 7
@@ -15,8 +15,9 @@ end
 @testset "Clear_Preprocessing_Molecule" begin
     mol = load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
     mol_props_names = ["mol_graph", "adjacency_matrix", "mol_weighted_graph", 
-                        "weighted_graph_adj_matrix", "chem_cycle_list", 
-                        "ring_intersections_matrix", "ring_class_list", "atmprops_df", "atom_conjugated_system_list"]
+                    "weighted_graph_adj_matrix", "chem_cycle_array", 
+                    "ring_intersections_matrix", "atom_aromaticity_array", 
+                    "atmprops_df", "atom_conjugated_system_array"]
     atom_props_names = ["CycleListNum", "CycleSize", "ElementWithNeighborCount",
                         "AromaticityType", "BondTypes", "Neighbors", "SecondaryNeighbors"]
     bond_props_names = ["TRIPOS_tag"]
@@ -24,7 +25,7 @@ end
     PreprocessingMolecule!(mol)
     ClearPreprocessingMolecule!(mol)
     
-    @test !haskey(mol.properties, "ring_class_list")
+    @test !haskey(mol.properties, "atmprops_df")
     @test length(mol.atoms.properties[20]) == num_props_before_preprocessing["atoms"]
     for name in mol_props_names
         @test !haskey(mol.properties, name)
