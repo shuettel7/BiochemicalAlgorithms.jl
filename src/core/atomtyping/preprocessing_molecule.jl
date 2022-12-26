@@ -73,15 +73,20 @@ function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_a
     for sublist in LList
         all_cycle_atoms = vcat(all_cycle_atoms, sublist)
     end
-    filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& mol.bonds.order .== BondOrder.Double), :]
+    filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
+                                (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
     possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2)))
     for atmNum in possible_conjugated_atoms
+        direct_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])
         if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && 
-            countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])[2.0] >= 1
+            ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
+            (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1))
             number_of_conjugatable_neighbors = 0
             for neigh in neighbors(mol_graph, atmNum)
+                neighbors_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][neigh, neighbors(mol_graph, neigh)])
                 if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[neigh]) && 
-                    countmap(mol.properties["weighted_graph_adj_matrix"][neigh, neighbors(mol_graph, neigh)])[2.0] >= 1
+                    ((haskey(neighbors_bonds_countmap, 2.0) && neighbors_bonds_countmap[2.0] >= 1) ||
+                    (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1))
                     number_of_conjugatable_neighbors += 1
                 end
             end
