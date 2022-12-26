@@ -1,11 +1,10 @@
-using BiochemicalAlgorithms, DataFramesMeta, DataFrames
+using DataFramesMeta, DataFrames
 
-export get_molecule_atomtypes!, count_EWG
+export get_molecule_atomtypes!
 
 function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
-    PreprocessingMolecule!(mol)
-    atmprops_df = create_atom_preprocessing_df!(mol)
     def_file_df = load_atomtyping_DEF(mapfile)
+    atmprops_df = mol.properties["atmprops_df"]
     
     # loop over atoms, prefilter dataframe by element and neighbor count
     for i = (1:nrow(mol.atoms))
@@ -38,11 +37,11 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                     if colnum == 4 && coldata == num_EWG_groups
                         match_list[colnum] = 1
                     end
-                    if colnum == 5 && APS_processor(coldata, DataFrameRow(atmprops_df, i))
+                    if colnum == 5 && APS_processor(coldata, atmprops_df[i,:])
                         match_list[colnum] = 1
                     end
-                    if colnum == 6 #&& CES_parser(coldata, atmprops_df[i,:])
-                        match_list[colnum] = 2
+                    if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df[i,:], mol, i)
+                        match_list[colnum] = 1
                     end
                 end
             end
