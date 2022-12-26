@@ -1,6 +1,6 @@
-using BiochemicalAlgorithms, DataFramesMeta, DataFrames
+using DataFramesMeta, DataFrames
 
-export get_molecule_atomtypes!, count_EWG
+export get_molecule_atomtypes!
 
 function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
     def_file_df = load_atomtyping_DEF(mapfile)
