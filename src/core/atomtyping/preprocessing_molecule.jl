@@ -69,10 +69,8 @@ end
 function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, mol::AbstractMolecule)
     mol_graph = mol.properties["mol_graph"]
     all_cycle_atoms = Vector{Int}()
-    ret_vec = Vector{Int}()
-    for sublist in LList
-        all_cycle_atoms = vcat(all_cycle_atoms, sublist)
-    end
+    conjugated_atoms_vec = reduce(vcat, LList)
+    
     filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
                                 (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
     possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2)))
@@ -91,11 +89,11 @@ function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_a
                 end
             end
             if number_of_conjugatable_neighbors >= 2
-                push!(ret_vec, atmNum)
+                push!(conjugated_atoms_vec, atmNum)
             end
         end
     end
-    return ret_vec
+    return conjugated_atoms_vec
 end
 
 
