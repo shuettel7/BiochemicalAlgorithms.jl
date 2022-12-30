@@ -26,7 +26,8 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
         ### add TRIPOS_tag to AR1 type bonds
         shifted_sublist = vcat(sublist[2:lastindex(sublist)], sublist[1])
         ring_bonds = DataFrame(:a1 => vcat(sublist, shifted_sublist), :a2 => vcat(shifted_sublist, sublist))
-        if all(in([[string("RG", lastindex(sublist)), "AR1"]]).(atom_aromaticity_array[sublist]))
+        if haskey(countmap(reduce(vcat, atom_aromaticity_array[sublist])), "AR1") && 
+                countmap(reduce(vcat, atom_aromaticity_array[sublist]))["AR1"] == lastindex(sublist)
             @with innerjoin(ring_bonds, mol.bonds, on = [:a1, :a2]) begin
                 push!.(:properties, "TRIPOS_tag" => "ar")
             end
@@ -69,28 +70,31 @@ end
 function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, mol::AbstractMolecule)
     mol_graph = mol.properties["mol_graph"]
     all_cycle_atoms = Vector{Int}()
-    ret_vec = Vector{Int}()
-    for sublist in LList
-        all_cycle_atoms = vcat(all_cycle_atoms, sublist)
-    end
-    filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& mol.bonds.order .== BondOrder.Double), :]
+    conjugated_atoms_vec = isempty(LList) ? Vector{Int}() : reduce(vcat, LList)
+    
+    filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
+                                (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
     possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2)))
     for atmNum in possible_conjugated_atoms
-        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && 
-            countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])[2.0] >= 1
+        direct_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])
+        if in([Elements.C, Elements.N,Elements.O, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && 
+            ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
+            (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1))
             number_of_conjugatable_neighbors = 0
             for neigh in neighbors(mol_graph, atmNum)
-                if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[neigh]) && 
-                    countmap(mol.properties["weighted_graph_adj_matrix"][neigh, neighbors(mol_graph, neigh)])[2.0] >= 1
+                neighbors_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][neigh, neighbors(mol_graph, neigh)])
+                if in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[neigh]) && 
+                    ((haskey(neighbors_bonds_countmap, 2.0) && neighbors_bonds_countmap[2.0] >= 1) ||
+                    (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1))
                     number_of_conjugatable_neighbors += 1
                 end
             end
             if number_of_conjugatable_neighbors >= 2
-                push!(ret_vec, atmNum)
+                push!(conjugated_atoms_vec, atmNum)
             end
         end
     end
-    return ret_vec
+    return conjugated_atoms_vec
 end
 
 
@@ -183,14 +187,13 @@ end
 function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
     atom_ring_class_array = Vector{Vector{String}}(undef, nrow(mol.atoms))
     for i = (1:nrow(mol.atoms))
-        atom_ring_class_array[i] = ["NR"]
+        if i in reduce(vcat, isempty(LList) ? Vector{Int}() : LList)
+            atom_ring_class_array[i] = []
+        else
+            atom_ring_class_array[i] = ["NR"]
+        end
     end
     for (numvlist, vlist) in enumerate(LList)
-        for vertex in vlist
-            if !in(atom_ring_class_array[vertex]).(string("RG", lastindex(vlist)))
-                atom_ring_class_array[vertex] = [string("RG", lastindex(vlist))]
-            end
-        end
 
         # check if is O, N, or S present in Ring vertex list
         ONSP_present = false
@@ -206,11 +209,21 @@ function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_ma
         pi_electrons = haskey(countmap(innerjoined_df.order), BondOrder.T(2)) ? countmap(innerjoined_df.order)[BondOrder.T(2)] * 2 : 0
         if (pi_electrons / lastindex(vlist)) == 1.0
             for x in vlist
-                append!(atom_ring_class_array[x], ["AR1"])
+                if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+                    prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))])
+                elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+                    count_ring_index = findfirst(x -> "AR1", atom_ring_class_array[x])+2
+                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vlist))
+                end
             end
         elseif (pi_electrons / lastindex(vlist)) > 1/2 && (pi_electrons / lastindex(vlist)) <= 1 && ONSP_present && lastindex(vlist) > 4
             for x in vlist
-                append!(atom_ring_class_array[x], ["AR2"])
+                if !in(atom_ring_class_array[x]).("AR2") && !in(atom_ring_class_array[x]).(string("RG", lastindex(vlist)))
+                    append!(atom_ring_class_array[x], ["AR2"], [string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))])
+                elseif in(atom_ring_class_array[x]).("AR2") && in(atom_ring_class_array[x]).(string("RG", lastindex(vlist)))
+                    count_ring_index = findfirst(x -> "AR2", atom_ring_class_array[x])+2
+                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vlist))
+                end
             end
         elseif (pi_electrons / lastindex(vlist)) > 1/2 && (pi_electrons / lastindex(vlist)) < 1 && !ONSP_present && lastindex(vlist) > 4
             # check if Ring vlist has intersections with other rings in molecule and if these are aromatic
@@ -220,8 +233,11 @@ function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_ma
                                             mol.bonds.a2 .== inters_matrix[numvlist,i][2]),:]
                     if haskey(countmap(atom_bonds.order), BondOrder.T(2)) && countmap(atom_bonds.order)[BondOrder.T(2)] == 1
                         for x in vlist
-                            if !in(atom_ring_class_array[x]).("AR1")
-                                append!(atom_ring_class_array[x], ["AR1"])
+                            if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+                                prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))])
+                            elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+                                count_ring_index = findfirst(x -> "AR1", atom_ring_class_array[x])+2
+                                atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vlist))
                             end
                         end
                     end           
@@ -229,8 +245,11 @@ function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_ma
             end
         elseif (pi_electrons / lastindex(vlist)) < 1/2
             for x in vlist
-                if in(atom_ring_class_array[x]).("AR5") && !in(atom_ring_class_array[x]).("AR1")
-                    atom_ring_class_array[x] = ["AR5", string("RG", lastindex(vlist))]  
+                if !in(atom_ring_class_array[x]).("AR5") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+                    append!(atom_ring_class_array[x], ["AR5", string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))]) 
+                elseif in(atom_ring_class_array[x]).("AR5") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+                    ring_prop_with_count_index = findfirst(x -> string("RG", lastindex(vlist)), atom_ring_class_array[x])+1
+                    atom_ring_class_array[x][ring_prop_with_count_index] = string(parse(Int,atom_ring_class_array[x][ring_prop_with_count_index][1])+1, "RG", lastindex(vlist))
                 end
             end
         end
