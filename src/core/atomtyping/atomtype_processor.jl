@@ -1,6 +1,12 @@
 using DataFramesMeta, DataFrames
 
-export get_molecule_atomtypes!
+export get_molecule_atomtypes!, gaff_atomtyping_script!
+
+function gaff_atomtyping_script!(mol::AbstractMolecule, mapfile = "data/antechamber/ATOMTYPE_GFF.DEF")
+    PreprocessingMolecule!(mol)
+    get_molecule_atomtypes!(mol, mapfile)
+    gaff_postprocessing_all_conjugated_systems!(mol)
+end
 
 function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
     def_file_df = load_atomtyping_DEF(mapfile)
@@ -41,6 +47,7 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                         match_list[colnum] = 1
                     end
                     if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df[i,:], mol, i)
+                        # println(i, "   ", coldata)
                         match_list[colnum] = 1
                     end
                 end
