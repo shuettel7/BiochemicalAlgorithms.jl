@@ -19,7 +19,7 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
         mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_array)
     end
     mol.properties["atom_aromaticity_array"] = atom_aromaticity_array = atom_aromaticity_type_processor(chem_cycle_array, ring_intersections_matrix, mol)
-    mol.properties["atom_conjugated_system_array"] = atom_conjugated_system_array = atom_conjugated_system_processor(chem_cycle_array, wgraph_adj_matrix, mol)
+    mol.properties["atom_conjugated_system_array"] = atom_conjugated_system_array = atom_conjugated_system_processor(chem_cycle_array, mol)
 
     ### Assign Cycle/Ring properties to Atoms and Bonds
     for (j, sublist) in enumerate(chem_cycle_array)
@@ -67,10 +67,10 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 end
 
 
-function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, mol::AbstractMolecule)
+function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, mol::AbstractMolecule)
     mol_graph = mol.properties["mol_graph"]
     all_cycle_atoms = Vector{Int}()
-    conjugated_atoms_vec = isempty(LList) ? Vector{Int}() : reduce(vcat, LList)
+    conjugated_atoms_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     
     filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
                                 (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
@@ -184,16 +184,17 @@ function create_atom_preprocessing_df!(mol::AbstractMolecule)
 end
 
 
-function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
+function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, intersectionMatrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
     atom_ring_class_array = Vector{Vector{String}}(undef, nrow(mol.atoms))
+    reduced_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat,allCycles_vec)
     for i = (1:nrow(mol.atoms))
-        if i in reduce(vcat, isempty(LList) ? Vector{Int}() : LList)
+        if i in reduced_vec
             atom_ring_class_array[i] = []
         else
             atom_ring_class_array[i] = ["NR"]
         end
     end
-    for (numvlist, vlist) in enumerate(LList)
+    for (numvlist, vlist) in enumerate(allCycles_vec)
 
         # check if is O, N, or S present in Ring vertex list
         ONSP_present = false
@@ -227,10 +228,10 @@ function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_ma
             end
         elseif (pi_electrons / lastindex(vlist)) > 1/2 && (pi_electrons / lastindex(vlist)) < 1 && !ONSP_present && lastindex(vlist) > 4
             # check if Ring vlist has intersections with other rings in molecule and if these are aromatic
-            for i = (1:lastindex(LList))
-                if !isempty(inters_matrix[numvlist,i]) && lastindex(inters_matrix[numvlist, i]) == 2
-                    atom_bonds = mol.bonds[(mol.bonds.a1 .== inters_matrix[numvlist,i][1] .|| 
-                                            mol.bonds.a2 .== inters_matrix[numvlist,i][2]),:]
+            for i = (1:lastindex(allCycles_vec))
+                if !isempty(intersectionMatrix[numvlist,i]) && lastindex(intersectionMatrix[numvlist, i]) == 2
+                    atom_bonds = mol.bonds[(mol.bonds.a1 .== intersectionMatrix[numvlist,i][1] .|| 
+                                            mol.bonds.a2 .== intersectionMatrix[numvlist,i][2]),:]
                     if haskey(countmap(atom_bonds.order), BondOrder.T(2)) && countmap(atom_bonds.order)[BondOrder.T(2)] == 1
                         for x in vlist
                             if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
