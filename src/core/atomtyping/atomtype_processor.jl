@@ -47,7 +47,6 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                         match_list[colnum] = 1
                     end
                     if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df[i,:], mol, i)
-                        # println(i, "   ", coldata)
                         match_list[colnum] = 1
                     end
                 end
@@ -66,8 +65,8 @@ end
 
 
 function count_EWG(num::Int, mol::AbstractMolecule, atmprops_df::DataFrame)
-    # usually only used on hydrogen atoms:
-    # Electron withdrawal Atoms according to antechamber document are: N, O, F, Cl, and Br
+    # only used on hydrogen atoms:
+    # Electron withdrawal Atoms (EWG) according to antechamber document are: N, O, F, Cl, and Br
     # which are bound to the immediate neighbour
     # To Do: Test differences for Atom Typing, see below typical know EWG
     strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1"]
