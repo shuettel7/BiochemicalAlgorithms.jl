@@ -70,10 +70,6 @@ function CES_processor(CES_df::DataFrame, atmprops_df::DataFrameRow, mol::Abstra
     # DEF file until Atomtype is assigned or no more criteria fit (return error?)
 
     all_possible_paths = path_builder(CES_df, atmprops_df, [0], [atomnum], mol, 0)
-
-    if !isempty(all_possible_paths)
-        println(all_possible_paths)
-    end
     
     return path_checker(CES_df, all_possible_paths)
 end
@@ -84,7 +80,8 @@ function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
         return false 
     elseif isempty(allPossiblePaths)
         return false
-    elseif length(countmap(allPossiblePaths)) != lastindex(allPossiblePaths) && !(length(countmap(allPossiblePaths)) == number_of_ces_paths(CES_df))
+    elseif length(countmap(allPossiblePaths)) != lastindex(allPossiblePaths) || 
+            length(countmap(allPossiblePaths)) != number_of_ces_paths(CES_df)
         # if two paths are the same and should be different, but also not same length of the searched paths
         return false
     end
@@ -132,9 +129,7 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
         push!(check_expr.args, CES_APS_processor(cesRow.CES_APS[1], atmprops_df, curr_atom, 
                                             atmPath_vec[lastindex(atmPath_vec)-1], mol))
     end
-    if cesRow.Element[1] == "XX" && contains(cesRow.CES_APS[1], "AR1") 
-        println(check_expr)
-    end
+    
     # evaluate the built expression to a boolean
     check_Bool = eval(check_expr)
 
@@ -147,8 +142,7 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrameRow, previousCesA
     # start next instance of function if path is correct so far
     if check_Bool
         # List of current neighbor atoms at certain depth/distance from source 
-        curr_atm_neighbors = filter(x -> !(x in neighborhood(mol_graph, absSourceAtm, depth)) && 
-                                    x in neighbors(mol_graph, curr_atom), 
+        curr_atm_neighbors = filter(x -> !(x in atmPath_vec) && x in neighbors(mol_graph, curr_atom), 
                                     neighborhood(mol_graph, absSourceAtm, depth+1))
         nextCesAtomId_list = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
         for atm_neigh in curr_atm_neighbors
@@ -188,9 +182,6 @@ function CES_APS_processor(colstring::String, atmprops_df::DataFrameRow, curr_at
                 else
                     push!(or_expr_conditionals.args, in(atmprops_df.BondTypes).(orItem))
                 end
-            end
-            if contains(colstring, "AR1")
-                println("Colstring CES_APS_processor:  ", colstring, "  ", in(atmprops_df.BondTypes).(colstring))                
             end
             if eval(or_expr_conditionals) == false
                 return false
