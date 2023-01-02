@@ -8,7 +8,9 @@ function gaff_postprocessing_all_conjugated_systems!(mol::AbstractMolecule)
 
     group1_conjugated_atoms = mol.atoms[(in(group_atomtypes_dict[1]).(mol.atoms[!,:atomtype])),:]
 
-    group1_atoms_with_1_neighbor_in_group1_atoms = filter(x -> countmap(in(group1_conjugated_atoms.number).(neighbors(mol_graph, x.number)))[true] == 1, group1_conjugated_atoms)
+    group1_atoms_with_1_neighbor_in_group1_atoms = filter(x -> 
+                countmap(in(group1_conjugated_atoms.number).(neighbors(mol_graph, x.number)))[true] == 1, 
+                group1_conjugated_atoms)
 
     seen_atoms_vec = Vector{Int}()
     
@@ -48,10 +50,9 @@ function conjAtm_path_builder!(group1_conjugated_atoms::DataFrame, path_vec::Vec
             mol.atoms.atomtype[curr_atom] = group_atomtypes_dict[2][findfirst(x -> x == mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])]
         end
     end
-    next_neighbors_vec = filter(x -> !(x in neighborhood(mol_graph, source_atom, depth)) && 
-                                    x in neighbors(mol_graph, curr_atom) && in(group1_conjugated_atoms.number).(x), 
-                                    neighborhood(mol_graph, source_atom, depth+1))
-
+    next_neighbors_vec = filter(x -> !in(path_vec).(x) && x in neighbors(mol_graph, curr_atom) && 
+                                    in(group1_conjugated_atoms.number).(x), neighborhood(mol_graph, source_atom, depth+1))
+                                    
     all_paths = Vector{Vector{Int}}()
     if isempty(next_neighbors_vec)
         push!(all_paths, path_vec)
