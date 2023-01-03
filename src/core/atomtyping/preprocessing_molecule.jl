@@ -69,28 +69,53 @@ end
 
 function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, mol::AbstractMolecule)
     mol_graph = mol.properties["mol_graph"]
-    all_cycle_atoms = Vector{Int}()
-    conjugated_atoms_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
+    all_cycle_atoms = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
+    conjugated_atoms_vec = Vector{Int}()
     
-    filtered_bonds_df = mol.bonds[(.!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
+    filtered_bonds_df = mol.bonds[(in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a1]) .&&
+                                in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a2]) .&&
+                                .!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
                                 (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
     possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2)))
     for atmNum in possible_conjugated_atoms
-        direct_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])
-        if in([Elements.C, Elements.N,Elements.O, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && 
-            ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
-            (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1))
-            number_of_conjugatable_neighbors = 0
-            for neigh in neighbors(mol_graph, atmNum)
-                neighbors_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][neigh, neighbors(mol_graph, neigh)])
-                if in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[neigh]) && 
-                    ((haskey(neighbors_bonds_countmap, 2.0) && neighbors_bonds_countmap[2.0] >= 1) ||
-                    (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1))
-                    number_of_conjugatable_neighbors += 1
-                end
+        oxygen_neighbors = filter(x -> mol.atoms.element[x] == Elements.O && lastindex(neighbors(mol_graph, x)) == 1, 
+                                            neighbors(mol_graph, atmNum))
+        oxygen_bonds = lastindex(oxygen_neighbors) >= 2 ? 
+                                innerjoin(DataFrame(:a1 => vcat(repeat([atmNum], lastindex(oxygen_neighbors)), oxygen_neighbors), 
+                                                    :a2 => vcat(oxygen_neighbors, repeat([atmNum], lastindex(oxygen_neighbors)))), 
+                                                    filtered_bonds_df, on = [:a1, :a2]) : 
+                                []
+        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && lastindex(oxygen_neighbors) >= 2
+            haskey(countmap(oxygen_bonds.order), BondOrder.T(1)) && haskey(countmap(oxygen_bonds.order), BondOrder.T(2))
+            push!(conjugated_atoms_vec, atmNum)
+            maximum_DL_bonds = countmap(oxygen_bonds.order)[BondOrder.T(1)] <= countmap(oxygen_bonds.order)[BondOrder.T(2)] ? 
+                                countmap(oxygen_bonds.order)[BondOrder.T(1)] : countmap(oxygen_bonds.order)[BondOrder.T(2)]
+            for i in 1:maximum_DL_bonds
+                sb_oxygen = mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a1[i] == atmNum ? 
+                                mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a2[i] :
+                                mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a1[i]
+                db_oxygen = mol.bonds[(mol.bonds.order .== BondOrder.T(2)),:].a1[i] == atmNum ? 
+                                mol.bonds[(mol.bonds.order .== BondOrder.T(2)),:].a2[i] :
+                                mol.bonds[(mol.bonds.order .== BondOrder.T(2)),:].a1[i]
+                push!(conjugated_atoms_vec, sb_oxygen, db_oxygen)
             end
-            if number_of_conjugatable_neighbors >= 2
-                push!(conjugated_atoms_vec, atmNum)
+        else
+            direct_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])
+            if ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
+                (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1))
+                number_of_conjugatable_neighbors = 0
+                for neigh in neighbors(mol_graph, atmNum)
+                    neighbors_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][neigh, neighbors(mol_graph, neigh)])
+                    if in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[neigh]) && 
+                        ((haskey(neighbors_bonds_countmap, 2.0) && neighbors_bonds_countmap[2.0] >= 1) ||
+                        (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1)) ||
+                        in(mol.atoms.element[neighbors(mol_graph,neigh)]).(Elements.O)
+                        number_of_conjugatable_neighbors += 1
+                    end
+                end
+                if number_of_conjugatable_neighbors >= 2
+                    push!(conjugated_atoms_vec, atmNum)
+                end
             end
         end
     end
@@ -113,7 +138,9 @@ function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph,
         push!(BondShortVec, prop)
     end
     if in(mol.properties["atom_conjugated_system_array"]).(num)
-        push!(BondShortVec, "DL")
+        push!(BondShortVec, "DL", string(countmap(mol.properties["atom_conjugated_system_array"])[num], "DL"))
+    else
+        push!(BondShortVec, "0DL")
     end
     return BondShortVec
 end
@@ -195,7 +222,7 @@ end
 
 function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, intersectionMatrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
     atom_ring_class_array = Vector{Vector{String}}(undef, nrow(mol.atoms))
-    reduced_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat,allCycles_vec)
+    reduced_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     for i = (1:nrow(mol.atoms))
         if i in reduced_vec
             atom_ring_class_array[i] = []
