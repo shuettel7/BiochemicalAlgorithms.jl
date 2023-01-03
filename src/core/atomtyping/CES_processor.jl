@@ -80,8 +80,7 @@ function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
         return false 
     elseif isempty(allPossiblePaths)
         return false
-    elseif length(countmap(allPossiblePaths)) != lastindex(allPossiblePaths) || 
-            length(countmap(allPossiblePaths)) != number_of_ces_paths(CES_df)
+    elseif length(countmap(allPossiblePaths)) != number_of_ces_paths(CES_df)
         # if two paths are the same and should be different, but also not same length of the searched paths
         return false
     end
