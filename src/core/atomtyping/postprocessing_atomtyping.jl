@@ -40,8 +40,12 @@ function conjAtm_path_builder!(group1_conjugated_atoms::DataFrame, path_vec::Vec
 
     combination_df = DataFrame(:a1 => [previous_atom, curr_atom], :a2 => [curr_atom, previous_atom])
     bond_in_conjugated_atoms = innerjoin(combination_df, mol.bonds, on = [:a1, :a2])
-    
-    if bond_in_conjugated_atoms.order[1] == BondOrder.T(1)
+
+    if haskey(bond_in_conjugated_atoms.properties[1], "TRIPOS_tag") && bond_in_conjugated_atoms.properties[1]["TRIPOS_tag"] == "ar"
+        if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[1]
+            mol.atoms.atomtype[curr_atom] = group_atomtypes_dict[2][findfirst(x -> x == mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])]
+        end
+    elseif bond_in_conjugated_atoms.order[1] == BondOrder.T(1)
         if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[2]
             mol.atoms.atomtype[curr_atom] = group_atomtypes_dict[2][findfirst(x -> x == mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])]
         end
