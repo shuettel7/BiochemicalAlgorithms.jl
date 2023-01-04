@@ -540,7 +540,9 @@ function load_pubchem_json(fname::String, T=Float32)
                             has_velocity = false,
                             has_force = false,
                             frame_id = j,
-                            properties = Properties()
+                            properties = (!isnothing(compound.atoms.charge) && isInPcAtomAid(i, compound.atoms.charge)) 
+                                        ? Properties("PC_charge" => getPcAtomCharge(i, compound.atoms.charge))
+                                        : Properties()
                     )
 
                     push!(mol, atom)
@@ -564,4 +566,24 @@ function load_pubchem_json(fname::String, T=Float32)
     end
 
     mol
+end
+
+
+function isInPcAtomAid(atmNum::Int, PcAtomInt_vec::Vector{PCAtomInt})
+    for pcAtomInt in PcAtomInt_vec
+        if atmNum == pcAtomInt.aid
+            return true
+        end
+    end
+    return false
+end
+
+
+function getPcAtomCharge(atmNum::Int, PcAtomInt_vec::Vector{PCAtomInt})
+    for pcAtomInt in PcAtomInt_vec
+        if atmNum == pcAtomInt.aid
+            return pcAtomInt.value
+        end
+    end
+    return 0
 end
