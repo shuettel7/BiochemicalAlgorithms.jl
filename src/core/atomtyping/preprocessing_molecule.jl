@@ -1,5 +1,5 @@
 
-using Graphs, SimpleWeightedGraphs, StatsBase, EnumX, DataFramesMeta
+using Graphs, SimpleWeightedGraphs, StatsBase, EnumX, DataFramesMeta, BiochemicalAlgorithms
 
 export PreprocessingMolecule!, ClearPreprocessingMolecule!
 
@@ -47,10 +47,10 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     ### add further fields to atom properties
     ElemWNeighbourCount_vector = @with mol.atoms @byrow string(enumToString(:element), lastindex(neighbors(mol_graph, :number)))
     @with mol.atoms @byrow push!(:properties, 
-                        "ElementWithNeighborCount" => string(enumToString(:element), lastindex(neighbors(mol_graph, :number))),
+                        "ElementWithNeighborCount" => getStringElementWithNeighborCount(:number, mol),
                         "Neighbors" => neighbors(mol_graph, :number), 
                         "AromaticityType" => mol.properties["atom_aromaticity_array"][:number],
-                        "SecondaryNeighbors" => secondary_neighbors(mol_graph, :number),
+                        "num_EWG_groups" => Int(:element) == 1 ? count_EWG(:number, mol) : -1,
                         "BondTypes" => bondShortOrder_types(:number, mol, mol_graph, wgraph_adj_matrix))        
     
     ### add amide TRIPOS_tag to amide bonds
@@ -67,7 +67,43 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
 end
 
 
-function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_adj::Graphs.SparseMatrix, mol::AbstractMolecule)
+function getStringElementWithNeighborCount(atmNum::Int, mol::AbstractMolecule)
+    return string(enumToString(mol.atoms.element[atmNum]), lastindex(neighbors(mol.properties["mol_graph"], atmNum))) 
+end
+
+
+function count_EWG(num::Int, mol::AbstractMolecule)
+    # only used on hydrogen atoms:
+    # Electron withdrawal Atoms (EWG) according to antechamber document are: N, O, F, Cl, and Br
+    # which are bound to the immediate neighbour
+    # To Do: Test differences for Atom Typing, see below typical know EWG
+    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1"]
+    possible_pullers = ["C2", "C3", "C4", "S3", "S4", "N3", "P3", "P4", "O2", "S2"]
+    elec_pullers_num = 0
+    mol_graph = mol.properties["mol_graph"]
+    direct_neighbor = getStringElementWithNeighborCount(neighbors(mol_graph, num)[1], mol)
+    indirect_neighbors = filter(x -> !(x in neighborhood(mol_graph, num, 1)), neighborhood(mol_graph, num, 2))
+    if in(possible_pullers).(direct_neighbor)
+        for secNeigh in indirect_neighbors
+            if getStringElementWithNeighborCount(secNeigh, mol) in strong_pullers
+                elec_pullers_num += 1
+            elseif getStringElementWithNeighborCount(secNeigh, mol) in possible_pullers
+                tert_neighbors_elements = Vector{String}()
+                for tertNeigh in filter(x -> !(x in neighborhood(mol_graph, num, 2)) && x in neighbors(mol_graph, secNeigh), 
+                                                neighborhood(mol_graph, num, 3))
+                    push!(tert_neighbors_elements, getStringElementWithNeighborCount(tertNeigh, mol))
+                end
+                if true in in(strong_pullers).(tert_neighbors_elements)
+                    elec_pullers_num += 1
+                end
+            end
+        end
+    end
+    return elec_pullers_num
+end
+
+
+function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, mol::AbstractMolecule)
     mol_graph = mol.properties["mol_graph"]
     all_cycle_atoms = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     conjugated_atoms_vec = Vector{Int}()
@@ -80,16 +116,15 @@ function atom_conjugated_system_processor(LList::Vector{Vector{Int64}}, wgraph_a
     for atmNum in possible_conjugated_atoms
         oxygen_neighbors = filter(x -> mol.atoms.element[x] == Elements.O && lastindex(neighbors(mol_graph, x)) == 1, 
                                             neighbors(mol_graph, atmNum))
-        oxygen_bonds = lastindex(oxygen_neighbors) >= 2 ? 
-                                innerjoin(DataFrame(:a1 => vcat(repeat([atmNum], lastindex(oxygen_neighbors)), oxygen_neighbors), 
-                                                    :a2 => vcat(oxygen_neighbors, repeat([atmNum], lastindex(oxygen_neighbors)))), 
-                                                    filtered_bonds_df, on = [:a1, :a2]) : 
-                                []
-        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && lastindex(oxygen_neighbors) >= 2
-            haskey(countmap(oxygen_bonds.order), BondOrder.T(1)) && haskey(countmap(oxygen_bonds.order), BondOrder.T(2))
+        oxygen_bonds = innerjoin(DataFrame(:a1 => vcat(repeat([atmNum], lastindex(oxygen_neighbors)), oxygen_neighbors), 
+                                        :a2 => vcat(oxygen_neighbors, repeat([atmNum], lastindex(oxygen_neighbors)))), 
+                                        filtered_bonds_df, on = [:a1, :a2])
+        bond_order_dict = countmap(oxygen_bonds.order)
+        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) >= 2 &&
+            haskey(bond_order_dict, BondOrder.T(1)) && haskey(bond_order_dict, BondOrder.T(2))
             push!(conjugated_atoms_vec, atmNum)
-            maximum_DL_bonds = countmap(oxygen_bonds.order)[BondOrder.T(1)] <= countmap(oxygen_bonds.order)[BondOrder.T(2)] ? 
-                                countmap(oxygen_bonds.order)[BondOrder.T(1)] : countmap(oxygen_bonds.order)[BondOrder.T(2)]
+            maximum_DL_bonds = bond_order_dict[BondOrder.T(1)] <= bond_order_dict[BondOrder.T(2)] ? 
+                                bond_order_dict[BondOrder.T(1)] : bond_order_dict[BondOrder.T(2)]
             for i in 1:maximum_DL_bonds
                 sb_oxygen = mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a1[i] == atmNum ? 
                                 mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a2[i] :
@@ -146,11 +181,6 @@ function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph,
 end
 
 
-function secondary_neighbors(mol_graph::Graph, num::Int)
-    return filter!(!(x -> x in neighborhood(mol_graph, num, 1)), neighborhood(mol_graph, num, 2))
-end
-
-
 function amide_processor(mol::AbstractMolecule, mol_graph::Graph, ElementWNeighbourCount_vector::Vector{String})
     amide_bond_vector = Vector{Tuple{Int64, Int64}}()
     nitrogen_atoms_array = mol.atoms[(mol.atoms[!, :element] .== Elements.N), :number]
@@ -172,7 +202,7 @@ function ClearPreprocessingMolecule!(mol::AbstractMolecule)
                         "ring_intersections_matrix", "atom_aromaticity_array", 
                         "atmprops_df", "atom_conjugated_system_array"]
     atom_props_names = ["CycleListNum", "CycleSize", "ElementWithNeighborCount",
-                        "AromaticityType", "BondTypes", "Neighbors", "SecondaryNeighbors"]
+                        "AromaticityType", "BondTypes", "Neighbors", "num_EWG_groups"]
     bond_props_names = ["TRIPOS_tag"]
     for name in mol_props_names
         delete!(mol.properties, name)
@@ -193,15 +223,15 @@ end
 function create_atom_preprocessing_df!(mol::AbstractMolecule)
     # Create DataFrame for better accessibility and handling of atom properties 
     
-    col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "SecondaryNeighbors", 
+    col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "num_EWG_groups", 
                  "BondTypes", "CycleSize", "CycleListNum"]
     atom_props_df = DataFrame([Vector{Vector{String}}(), Vector{String}(), Vector{Vector{Int64}}(), 
-                            Vector{Vector{Int64}}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
+                            Vector{Int64}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Int64}}()], col_names)        
     
     for (k, atm) in enumerate(eachrow(mol.atoms))
         push!(atom_props_df, (Vector{String}(), string(), Vector{Int64}(), 
-                        Vector{Int64}(), Vector{String}(), Vector{Int64}(), 
+                        -1, Vector{String}(), Vector{Int64}(), 
                         Vector{Int64}()))
         for col in intersect(col_names, keys(atm.properties))
             atom_props_df[!,col][k] = atm.properties[col]

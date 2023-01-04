@@ -2,6 +2,12 @@ using DataFramesMeta, DataFrames
 
 export get_molecule_atomtypes!
 
+function gaff_atomtyping_wrapper!(mol::AbstractMolecule, mapfile = "data/antechamber/ATOMTYPE_GFF.DEF")
+    PreprocessingMolecule!(mol)
+    get_molecule_atomtypes!(mol, mapfile)
+    gaff_postprocessing_all_conjugated_systems!(mol)
+end
+
 function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
     def_file_df = load_atomtyping_DEF(mapfile)
     atmprops_df = mol.properties["atmprops_df"]
@@ -10,10 +16,7 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
     for i = (1:nrow(mol.atoms))
         def_curr_df = copy(def_file_df)
         num_H_neighbors = countmap(in(["H1"]).(atmprops_df.ElementWithNeighborCount[atmprops_df.Neighbors[i]]))[true]
-        num_EWG_groups = -1
-        if Int(mol.atoms.element[i]) == 1
-            num_EWG_groups = count_EWG(i, mol, atmprops_df)
-        end
+        num_EWG_groups = mol.properties["atmprops_df"].num_EWG_groups[i]
         def_curr_df = @subset def_curr_df @byrow begin
             :atomic_number == Int(mol.atoms.element[i])
         end
@@ -55,28 +58,4 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
             end
         end
     end
-end
-
-
-function count_EWG(num::Int, mol::AbstractMolecule, atmprops_df::DataFrame)
-    # usually only used on hydrogen atoms:
-    # Electron withdrawal Atoms according to antechamber document are: N, O, F, Cl, and Br
-    # which are bound to the immediate neighbour
-    # To Do: Test differences for Atom Typing, see below typical know EWG
-    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1"]
-    possible_pullers = ["C2", "C3", "C4", "S3", "N3", "P3", "P4", "O2", "S2"]
-    elec_pullers_num = 0
-    if true in in(atmprops_df.ElementWithNeighborCount[atmprops_df.Neighbors[num]]).(possible_pullers)
-        for (i, neigh) in enumerate(atmprops_df.Neighbors[num])
-            if true in in(strong_pullers).(atmprops_df.ElementWithNeighborCount[atmprops_df.SecondaryNeighbors[num][i]]) &&
-                atmprops_df.ElementWithNeighborCount[neigh] in possible_pullers
-                # all neighbors of neighbor that are in strong_pullers are an EWG
-                elec_pullers_num += countmap(in(strong_pullers).(atmprops_df.ElementWithNeighborCount[atmprops_df.SecondaryNeighbors[num][i]]))[true]
-            end
-        end
-    end
-    if elec_pullers_num == 0
-        elec_pullers_num = -1
-    end
-    return elec_pullers_num
 end
