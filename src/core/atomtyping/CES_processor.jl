@@ -93,10 +93,11 @@ function number_of_ces_paths(CES_df::DataFrame)
 end
 
 
-function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::AbstractMolecule, absSourceAtm::Int, depth::Int)
+function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::AbstractMolecule, depth::Int)
     # build the atom paths while checking for the CES demands, return Vector of all Paths which are stored as a Vector{Int}
     cesRow = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]),:]
     mol_graph = mol.properties["mol_graph"]
+    absSourceAtm = atmPath_vec[1]
     curr_atom = atmPath_vec[lastindex(atmPath_vec)]
     previous_atom = lastindex(atmPath_vec) > 1 ? atmPath_vec[lastindex(atmPath_vec)-1] : -1
     
