@@ -32,3 +32,12 @@ end
     @test APS_processor(def_file_col_string6, atmprops_df2) == true
 
 end
+
+
+@testset "gaff_atomtyping_full_sequence" begin
+    mol = load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
+    PreprocessingMolecule!(mol)
+    get_molecule_atomtypes!(mol, "../data/antechamber/ATOMTYPE_GFF.DEF")
+    gaff_postprocessing_all_conjugated_systems!(mol)
+    @test all(in(mol.atoms.atomtype).(["cl", "f", "f", "f", "os", "o", "n", "cx", "cx", "cx", "c3", "c1", "ca", "c1", "ca", "c3", "ca", "ca", "c", "ca", "ca", "hc", "hc", "hc", "hc", "hc", "ha", "hn", "ha", "ha"]))
+end
