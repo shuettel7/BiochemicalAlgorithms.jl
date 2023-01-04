@@ -1,6 +1,6 @@
 using DataFramesMeta, DataFrames
 
-export get_molecule_atomtypes!
+export get_molecule_atomtypes!, gaff_atomtyping_wrapper!
 
 function gaff_atomtyping_wrapper!(mol::AbstractMolecule, mapfile = "data/antechamber/ATOMTYPE_GFF.DEF")
     PreprocessingMolecule!(mol)
@@ -43,7 +43,7 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                     if colnum == 5 && APS_processor(coldata, atmprops_df[i,:])
                         match_list[colnum] = 1
                     end
-                    if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df[i,:], mol, i)
+                    if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df, mol, i)
                         match_list[colnum] = 1
                     end
                 end
