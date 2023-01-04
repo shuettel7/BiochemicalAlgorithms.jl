@@ -77,8 +77,8 @@ function count_EWG(num::Int, mol::AbstractMolecule)
     # Electron withdrawal Atoms (EWG) according to antechamber document are: N, O, F, Cl, and Br
     # which are bound to the immediate neighbour
     # To Do: Test differences for Atom Typing, see below typical know EWG
-    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1"]
-    possible_indirect_pullers = ["S3", "S4", "N3", "P3", "P4"]
+    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1", "O2", "S4"]
+    possible_indirect_pullers = ["S3", "S4", "N3", "P4"]
     acceptable_first_neighbors = ["C2", "C3", "C4", "S3", "S4", "N3", "P3", "P4", "O2", "S2"]
     elec_pullers_num = 0
     mol_graph = mol.properties["mol_graph"]
@@ -113,8 +113,13 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
                                 in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a2]) .&&
                                 .!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
                                 (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
-    possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2)))
+    charged_atoms = filter(x -> haskey(mol.atoms[x,:properties], "PC_charge"), mol.atoms.number)
+    possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2, charged_atoms)))
     for atmNum in possible_conjugated_atoms
+        if atmNum in charged_atoms
+            push!(conjugated_atoms_vec, atmNum)
+            continue
+        end
         oxygen_neighbors = filter(x -> mol.atoms.element[x] == Elements.O && lastindex(neighbors(mol_graph, x)) == 1, 
                                             neighbors(mol_graph, atmNum))
         oxygen_bonds = innerjoin(DataFrame(:a1 => vcat(repeat([atmNum], lastindex(oxygen_neighbors)), oxygen_neighbors), 
@@ -246,7 +251,7 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, i
     atom_ring_class_array = Vector{Vector{String}}(undef, nrow(mol.atoms))
     reduced_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     for i = (1:nrow(mol.atoms))
-        if i in reduce(vcat, isempty(allCycles_vec) ? Vector{Int}() : allCycles_vec)
+        if i in reduced_vec
             atom_ring_class_array[i] = []
         else
             atom_ring_class_array[i] = ["NR"]
