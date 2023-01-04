@@ -12,34 +12,34 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     mol.properties["mol_weighted_graph"] = mol_wgraph = build_weighted_graph(mol)
     mol.properties["weighted_graph_adj_matrix"] = wgraph_adj_matrix = adjacency_matrix(mol.properties["mol_weighted_graph"])
 
-    # Cycle detection and list
+    # Cycle detection and Vectors
     mol.properties["chem_cycle_array"] = chem_cycle_array = cycle_basis(mol_graph)
     ring_intersections_matrix = Matrix{Vector{Int64}}(undef, lastindex(chem_cycle_array), lastindex(chem_cycle_array))
     if lastindex(chem_cycle_array) > 1
         mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_array)
     end
     mol.properties["atom_aromaticity_array"] = atom_aromaticity_array = atom_aromaticity_type_processor(chem_cycle_array, ring_intersections_matrix, mol)
-    mol.properties["atom_conjugated_system_array"] = atom_conjugated_system_array = atom_conjugated_system_processor(chem_cycle_array, wgraph_adj_matrix, mol)
+    mol.properties["atom_conjugated_system_array"] = atom_conjugated_system_array = atom_conjugated_system_processor(chem_cycle_array, mol)
 
     ### Assign Cycle/Ring properties to Atoms and Bonds
-    for (j, sublist) in enumerate(chem_cycle_array)
+    for (j, subvec) in enumerate(chem_cycle_array)
         ### add TRIPOS_tag to AR1 type bonds
-        shifted_sublist = vcat(sublist[2:lastindex(sublist)], sublist[1])
-        ring_bonds = DataFrame(:a1 => vcat(sublist, shifted_sublist), :a2 => vcat(shifted_sublist, sublist))
-        if haskey(countmap(reduce(vcat, atom_aromaticity_array[sublist])), "AR1") && 
-                countmap(reduce(vcat, atom_aromaticity_array[sublist]))["AR1"] == lastindex(sublist)
+        shifted_subvec = vcat(subvec[2:lastindex(subvec)], subvec[1])
+        ring_bonds = DataFrame(:a1 => vcat(subvec, shifted_subvec), :a2 => vcat(shifted_subvec, subvec))
+        if haskey(countmap(reduce(vcat, atom_aromaticity_array[subvec])), "AR1") && 
+                countmap(reduce(vcat, atom_aromaticity_array[subvec]))["AR1"] == lastindex(subvec)
             @with innerjoin(ring_bonds, mol.bonds, on = [:a1, :a2]) begin
                 push!.(:properties, "TRIPOS_tag" => "ar")
             end
         end
     
-        ### add CycleListNumber and CycleSize to every ring atom property
-        for num in sublist
-            if !(haskey(mol.atoms.properties[num], "CycleListNum") && haskey(mol.atoms.properties[num], "CycleSize"))
-                push!(mol.atoms.properties[num], "CycleListNum" => [j], "CycleSize" => [lastindex(sublist)])
-            elseif !in(mol.atoms.properties[num]["CycleListNum"]).(j)
-                append!(mol.atoms.properties[num]["CycleListNum"], [j])
-                append!(mol.atoms.properties[num]["CycleSize"], [lastindex(sublist)])
+        ### add CycleVectorNumber and CycleSize to every ring atom property
+        for num in subvec
+            if !(haskey(mol.atoms.properties[num], "CycleVectorNum") && haskey(mol.atoms.properties[num], "CycleSize"))
+                push!(mol.atoms.properties[num], "CycleVectorNum" => [j], "CycleSize" => [lastindex(subvec)])
+            elseif !in(mol.atoms.properties[num]["CycleVectorNum"]).(j)
+                append!(mol.atoms.properties[num]["CycleVectorNum"], [j])
+                append!(mol.atoms.properties[num]["CycleSize"], [lastindex(subvec)])
             end
         end 
     end
@@ -78,16 +78,17 @@ function count_EWG(num::Int, mol::AbstractMolecule)
     # which are bound to the immediate neighbour
     # To Do: Test differences for Atom Typing, see below typical know EWG
     strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1"]
-    possible_pullers = ["C2", "C3", "C4", "S3", "S4", "N3", "P3", "P4", "O2", "S2"]
+    possible_indirect_pullers = ["S3", "S4", "N3", "P3", "P4"]
+    acceptable_first_neighbors = ["C2", "C3", "C4", "S3", "S4", "N3", "P3", "P4", "O2", "S2"]
     elec_pullers_num = 0
     mol_graph = mol.properties["mol_graph"]
     direct_neighbor = getStringElementWithNeighborCount(neighbors(mol_graph, num)[1], mol)
-    indirect_neighbors = filter(x -> !(x in neighborhood(mol_graph, num, 1)), neighborhood(mol_graph, num, 2))
-    if in(possible_pullers).(direct_neighbor)
-        for secNeigh in indirect_neighbors
+    secondary_neighbors = filter(x -> !(x in neighborhood(mol_graph, num, 1)), neighborhood(mol_graph, num, 2))
+    if in(acceptable_first_neighbors).(direct_neighbor)
+        for secNeigh in secondary_neighbors
             if getStringElementWithNeighborCount(secNeigh, mol) in strong_pullers
                 elec_pullers_num += 1
-            elseif getStringElementWithNeighborCount(secNeigh, mol) in possible_pullers
+            elseif getStringElementWithNeighborCount(secNeigh, mol) in possible_indirect_pullers
                 tert_neighbors_elements = Vector{String}()
                 for tertNeigh in filter(x -> !(x in neighborhood(mol_graph, num, 2)) && x in neighbors(mol_graph, secNeigh), 
                                                 neighborhood(mol_graph, num, 3))
@@ -201,7 +202,7 @@ function ClearPreprocessingMolecule!(mol::AbstractMolecule)
                         "weighted_graph_adj_matrix", "chem_cycle_array", 
                         "ring_intersections_matrix", "atom_aromaticity_array", 
                         "atmprops_df", "atom_conjugated_system_array"]
-    atom_props_names = ["CycleListNum", "CycleSize", "ElementWithNeighborCount",
+    atom_props_names = ["CycleVectorNum", "CycleSize", "ElementWithNeighborCount",
                         "AromaticityType", "BondTypes", "Neighbors", "num_EWG_groups"]
     bond_props_names = ["TRIPOS_tag"]
     for name in mol_props_names
@@ -224,7 +225,7 @@ function create_atom_preprocessing_df!(mol::AbstractMolecule)
     # Create DataFrame for better accessibility and handling of atom properties 
     
     col_names = ["AromaticityType", "ElementWithNeighborCount", "Neighbors", "num_EWG_groups", 
-                 "BondTypes", "CycleSize", "CycleListNum"]
+                 "BondTypes", "CycleSize", "CycleVectorNum"]
     atom_props_df = DataFrame([Vector{Vector{String}}(), Vector{String}(), Vector{Vector{Int64}}(), 
                             Vector{Int64}(), Vector{Vector{String}}(), Vector{Vector{Int64}}(), 
                             Vector{Vector{Int64}}()], col_names)        
@@ -241,73 +242,73 @@ function create_atom_preprocessing_df!(mol::AbstractMolecule)
 end
 
 
-function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
+function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, inters_matrix::Matrix{Vector{Int64}}, mol::AbstractMolecule)
     atom_ring_class_array = Vector{Vector{String}}(undef, nrow(mol.atoms))
     reduced_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     for i = (1:nrow(mol.atoms))
-        if i in reduce(vcat, isempty(LList) ? Vector{Int}() : LList)
+        if i in reduce(vcat, isempty(allCycles_vec) ? Vector{Int}() : allCycles_vec)
             atom_ring_class_array[i] = []
         else
             atom_ring_class_array[i] = ["NR"]
         end
     end
-    for (numvlist, vlist) in enumerate(LList)
+    for (numvVector, vertices_vec) in enumerate(allCycles_vec)
 
-        # check if is O, N, or S present in Ring vertex list
+        # check if is O, N, or S present in Ring vertex Vector
         ONSP_present = false
-        if true in in(mol.atoms.element[vlist]).([Elements.O,Elements.N,Elements.S,Elements.P])
+        if true in in(mol.atoms.element[vertices_vec]).([Elements.O,Elements.N,Elements.S,Elements.P])
             ONSP_present = true
         end
         
         # check number of pi electrons
-        sublist = copy(vlist)
-        shifted_sublist = vcat(sublist[2:lastindex(sublist)], sublist[1])
-        ring_bonds = DataFrame(:a1 => [sublist; shifted_sublist], :a2 => [shifted_sublist; sublist])
+        subVector = copy(vertices_vec)
+        shifted_subVector = vcat(subVector[2:lastindex(subVector)], subVector[1])
+        ring_bonds = DataFrame(:a1 => [subVector; shifted_subVector], :a2 => [shifted_subVector; subVector])
         innerjoined_df = innerjoin(ring_bonds, mol.bonds, on = [:a1, :a2])
         pi_electrons = haskey(countmap(innerjoined_df.order), BondOrder.T(2)) ? countmap(innerjoined_df.order)[BondOrder.T(2)] * 2 : 0
-        if (pi_electrons / lastindex(vlist)) == 1.0
-            for x in vlist
-                if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
-                    prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))])
-                elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+        if (pi_electrons / lastindex(vertices_vec)) == 1.0
+            for x in vertices_vec
+                if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
+                    prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))])
+                elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
                     count_ring_index = findfirst(x -> "AR1", atom_ring_class_array[x])+2
-                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vlist))
+                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vertices_vec))
                 end
             end
-        elseif (pi_electrons / lastindex(vlist)) > 1/2 && (pi_electrons / lastindex(vlist)) <= 1 && ONSP_present && lastindex(vlist) > 4
-            for x in vlist
-                if !in(atom_ring_class_array[x]).("AR2") && !in(atom_ring_class_array[x]).(string("RG", lastindex(vlist)))
-                    append!(atom_ring_class_array[x], ["AR2"], [string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))])
-                elseif in(atom_ring_class_array[x]).("AR2") && in(atom_ring_class_array[x]).(string("RG", lastindex(vlist)))
+        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) <= 1 && ONSP_present && lastindex(vertices_vec) > 4
+            for x in vertices_vec
+                if !in(atom_ring_class_array[x]).("AR2") && !in(atom_ring_class_array[x]).(string("RG", lastindex(vertices_vec)))
+                    append!(atom_ring_class_array[x], ["AR2"], [string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))])
+                elseif in(atom_ring_class_array[x]).("AR2") && in(atom_ring_class_array[x]).(string("RG", lastindex(vertices_vec)))
                     count_ring_index = findfirst(x -> "AR2", atom_ring_class_array[x])+2
-                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vlist))
+                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vertices_vec))
                 end
             end
-        elseif (pi_electrons / lastindex(vlist)) > 1/2 && (pi_electrons / lastindex(vlist)) < 1 && !ONSP_present && lastindex(vlist) > 4
-            # check if Ring vlist has intersections with other rings in molecule and if these are aromatic
-            for i = (1:lastindex(LList))
-                if !isempty(inters_matrix[numvlist,i]) && lastindex(inters_matrix[numvlist, i]) == 2
-                    atom_bonds = mol.bonds[(mol.bonds.a1 .== inters_matrix[numvlist,i][1] .|| 
-                                            mol.bonds.a2 .== inters_matrix[numvlist,i][2]),:]
+        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) < 1 && !ONSP_present && lastindex(vertices_vec) > 4
+            # check if Ring vertices_vec has intersections with other rings in molecule and if these are aromatic
+            for i = (1:lastindex(allCycles_vec))
+                if !isempty(inters_matrix[numvVector,i]) && lastindex(inters_matrix[numvVector, i]) == 2
+                    atom_bonds = mol.bonds[(mol.bonds.a1 .== inters_matrix[numvVector,i][1] .|| 
+                                            mol.bonds.a2 .== inters_matrix[numvVector,i][2]),:]
                     if haskey(countmap(atom_bonds.order), BondOrder.T(2)) && countmap(atom_bonds.order)[BondOrder.T(2)] == 1
-                        for x in vlist
-                            if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
-                                prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))])
-                            elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
+                        for x in vertices_vec
+                            if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
+                                prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))])
+                            elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
                                 count_ring_index = findfirst(x -> "AR1", atom_ring_class_array[x])+2
-                                atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vlist))
+                                atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vertices_vec))
                             end
                         end
                     end           
                 end
             end
-        elseif (pi_electrons / lastindex(vlist)) < 1/2
-            for x in vlist
-                if !in(atom_ring_class_array[x]).("AR5") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
-                    append!(atom_ring_class_array[x], ["AR5", string("RG", lastindex(vlist)), string(1, "RG", lastindex(vlist))]) 
-                elseif in(atom_ring_class_array[x]).("AR5") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vlist)))
-                    ring_prop_with_count_index = findfirst(x -> string("RG", lastindex(vlist)), atom_ring_class_array[x])+1
-                    atom_ring_class_array[x][ring_prop_with_count_index] = string(parse(Int,atom_ring_class_array[x][ring_prop_with_count_index][1])+1, "RG", lastindex(vlist))
+        elseif (pi_electrons / lastindex(vertices_vec)) < 1/2
+            for x in vertices_vec
+                if !in(atom_ring_class_array[x]).("AR5") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
+                    append!(atom_ring_class_array[x], ["AR5", string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))]) 
+                elseif in(atom_ring_class_array[x]).("AR5") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
+                    ring_prop_with_count_index = findfirst(x -> string("RG", lastindex(vertices_vec)), atom_ring_class_array[x])+1
+                    atom_ring_class_array[x][ring_prop_with_count_index] = string(parse(Int,atom_ring_class_array[x][ring_prop_with_count_index][1])+1, "RG", lastindex(vertices_vec))
                 end
             end
         end
@@ -316,12 +317,12 @@ function atom_aromaticity_type_processor(LList::Vector{Vector{Int64}}, inters_ma
 end
 
 
-function cycle_intersections(LList::Vector{Vector{Int64}})
-    inters_matrix = Matrix{Vector{Int64}}(undef, lastindex(LList), lastindex(LList))
-    for i = (1:lastindex(LList))
-        curr1_array = copy(LList[i])
-        for j = (1:lastindex(LList))
-            curr2_array = copy(LList[j])
+function cycle_intersections(allCycles_vec::Vector{Vector{Int64}})
+    inters_matrix = Matrix{Vector{Int64}}(undef, lastindex(allCycles_vec), lastindex(allCycles_vec))
+    for i = (1:lastindex(allCycles_vec))
+        curr1_array = copy(allCycles_vec[i])
+        for j = (1:lastindex(allCycles_vec))
+            curr2_array = copy(allCycles_vec[j])
             if curr1_array != curr2_array
                 inters_matrix[i,j] = inters_matrix[j,i] = intersect(curr1_array, curr2_array)
             else
