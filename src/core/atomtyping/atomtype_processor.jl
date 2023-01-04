@@ -1,8 +1,8 @@
 using DataFramesMeta, DataFrames
 
-export get_molecule_atomtypes!, gaff_atomtyping_script!
+export get_molecule_atomtypes!, gaff_atomtyping_wrapper!
 
-function gaff_atomtyping_script!(mol::AbstractMolecule, mapfile = "data/antechamber/ATOMTYPE_GFF.DEF")
+function gaff_atomtyping_wrapper!(mol::AbstractMolecule, mapfile = "data/antechamber/ATOMTYPE_GFF.DEF")
     PreprocessingMolecule!(mol)
     get_molecule_atomtypes!(mol, mapfile)
     gaff_postprocessing_all_conjugated_systems!(mol)
@@ -16,10 +16,7 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
     for i = (1:nrow(mol.atoms))
         def_curr_df = copy(def_file_df)
         num_H_neighbors = countmap(in(["H1"]).(atmprops_df.ElementWithNeighborCount[atmprops_df.Neighbors[i]]))[true]
-        num_EWG_groups = -1
-        if Int(mol.atoms.element[i]) == 1
-            num_EWG_groups = count_EWG(i, mol, atmprops_df)
-        end
+        num_EWG_groups = mol.properties["atmprops_df"].num_EWG_groups[i]
         def_curr_df = @subset def_curr_df @byrow begin
             :atomic_number == Int(mol.atoms.element[i])
         end
@@ -46,7 +43,7 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
                     if colnum == 5 && APS_processor(coldata, atmprops_df[i,:])
                         match_list[colnum] = 1
                     end
-                    if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df[i,:], mol, i)
+                    if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df, mol, i)
                         match_list[colnum] = 1
                     end
                 end
@@ -65,8 +62,8 @@ end
 
 
 function count_EWG(num::Int, mol::AbstractMolecule, atmprops_df::DataFrame)
-    # only used on hydrogen atoms:
-    # Electron withdrawal Atoms (EWG) according to antechamber document are: N, O, F, Cl, and Br
+    # usually only used on hydrogen atoms:
+    # Electron withdrawal Atoms according to antechamber document are: N, O, F, Cl, and Br
     # which are bound to the immediate neighbour
     # To Do: Test differences for Atom Typing, see below typical know EWG
     strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1"]
