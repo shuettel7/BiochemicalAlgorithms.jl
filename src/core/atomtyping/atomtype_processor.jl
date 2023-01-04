@@ -1,6 +1,6 @@
 using DataFramesMeta, DataFrames
 
-export get_molecule_atomtypes!, gaff_atomtyping_script!
+export get_molecule_atomtypes!, gaff_atomtyping_wrapper!
 
 function gaff_atomtyping_wrapper!(mol::AbstractMolecule, mapfile = "data/antechamber/ATOMTYPE_GFF.DEF")
     PreprocessingMolecule!(mol)
