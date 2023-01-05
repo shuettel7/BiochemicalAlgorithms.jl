@@ -77,8 +77,8 @@ function count_EWG(num::Int, mol::AbstractMolecule)
     # Electron withdrawal Atoms (EWG) according to antechamber document are: N, O, F, Cl, and Br
     # which are bound to the immediate neighbour
     # To Do: Test differences for Atom Typing, see below typical know EWG
-    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1", "O2", "S4"]
-    possible_indirect_pullers = ["S3", "S4", "N3", "P4"]
+    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1", "O2", "S2", "S3", "S4", "N2", "N3"]
+    possible_indirect_pullers = ["S3", "S4", "N3"]
     acceptable_first_neighbors = ["C2", "C3", "C4", "S3", "S4", "N3", "P3", "P4", "O2", "S2"]
     elec_pullers_num = 0
     mol_graph = mol.properties["mol_graph"]
@@ -169,7 +169,8 @@ function bondShortOrder_types(num::Int, mol::AbstractMolecule, mol_graph::Graph,
     bonds_dict = countmap(wgraph_adj_matrix[num, neighbors(mol_graph, num)])
     for i in keys(bonds_dict)
         curr_bond_str = enumToString(BondShortOrderType(Int(i)))
-        if !in(mol.properties["atom_aromaticity_array"][num]).("NR") && !in(mol.properties["atom_aromaticity_array"][num]).("AR5") || in(mol.properties["atom_conjugated_system_array"]).(num)
+        if !in(mol.properties["atom_aromaticity_array"][num]).("NR") && 
+            !in(mol.properties["atom_aromaticity_array"][num]).("AR5") || in(mol.properties["atom_conjugated_system_array"]).(num)
             push!(BondShortVec, curr_bond_str, string(bonds_dict[i], curr_bond_str))
         else
             push!(BondShortVec, uppercase(curr_bond_str), string(bonds_dict[i], uppercase(curr_bond_str)))
@@ -275,18 +276,26 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, i
             for x in vertices_vec
                 if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
                     prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))])
-                elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
-                    count_ring_index = findfirst(x -> "AR1", atom_ring_class_array[x])+2
-                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vertices_vec))
+                elseif in(atom_ring_class_array[x]).("AR1")
+                    count_ring_index = findfirst(x -> x == "AR1", atom_ring_class_array[x])+2
+                    curr_count = parse(Int,atom_ring_class_array[x][count_ring_index][1])
+                    max_count_occurences = countmap(reduced_vec)[x] 
+                    atom_ring_class_array[x][count_ring_index] = string(curr_count+1 >= max_count_occurences
+                                                                        ? max_count_occurences
+                                                                        : curr_count+1, "RG", lastindex(vertices_vec))
                 end
             end
         elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) <= 1 && ONSP_present && lastindex(vertices_vec) > 4
             for x in vertices_vec
                 if !in(atom_ring_class_array[x]).("AR2") && !in(atom_ring_class_array[x]).(string("RG", lastindex(vertices_vec)))
                     append!(atom_ring_class_array[x], ["AR2"], [string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))])
-                elseif in(atom_ring_class_array[x]).("AR2") && in(atom_ring_class_array[x]).(string("RG", lastindex(vertices_vec)))
-                    count_ring_index = findfirst(x -> "AR2", atom_ring_class_array[x])+2
-                    atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vertices_vec))
+                elseif in(atom_ring_class_array[x]).("AR2")
+                    count_ring_index = findfirst(x -> x == "AR2", atom_ring_class_array[x])+2
+                    curr_count = parse(Int,atom_ring_class_array[x][count_ring_index][1])
+                    max_count_occurences = countmap(reduced_vec)[x] 
+                    atom_ring_class_array[x][count_ring_index] = string(curr_count+1 >= max_count_occurences
+                                                                        ? max_count_occurences
+                                                                        : curr_count+1, "RG", lastindex(vertices_vec))
                 end
             end
         elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) < 1 && !ONSP_present && lastindex(vertices_vec) > 4
@@ -299,9 +308,13 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, i
                         for x in vertices_vec
                             if !in(atom_ring_class_array[x]).("AR1") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
                                 prepend!(atom_ring_class_array[x], ["AR1"], [string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))])
-                            elseif in(atom_ring_class_array[x]).("AR1") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
-                                count_ring_index = findfirst(x -> "AR1", atom_ring_class_array[x])+2
-                                atom_ring_class_array[x][count_ring_index] = string(parse(Int,atom_ring_class_array[x][count_ring_index][1])+1, "RG", lastindex(vertices_vec))
+                            elseif in(atom_ring_class_array[x]).("AR1")
+                                count_ring_index = findfirst(x -> x == "AR1", atom_ring_class_array[x])+2
+                                curr_count = parse(Int,atom_ring_class_array[x][count_ring_index][1])
+                                max_count_occurences = countmap(reduced_vec)[x] 
+                                atom_ring_class_array[x][count_ring_index] = string(curr_count+1 >= max_count_occurences
+                                                                                    ? max_count_occurences
+                                                                                    : curr_count+1, "RG", lastindex(vertices_vec))
                             end
                         end
                     end           
@@ -312,8 +325,12 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, i
                 if !in(atom_ring_class_array[x]).("AR5") && !in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
                     append!(atom_ring_class_array[x], ["AR5", string("RG", lastindex(vertices_vec)), string(1, "RG", lastindex(vertices_vec))]) 
                 elseif in(atom_ring_class_array[x]).("AR5") && in(atom_ring_class_array[x]).(string("RG6", lastindex(vertices_vec)))
-                    ring_prop_with_count_index = findfirst(x -> string("RG", lastindex(vertices_vec)), atom_ring_class_array[x])+1
-                    atom_ring_class_array[x][ring_prop_with_count_index] = string(parse(Int,atom_ring_class_array[x][ring_prop_with_count_index][1])+1, "RG", lastindex(vertices_vec))
+                    count_ring_index = findfirst(x -> x == "AR5",  atom_ring_class_array[x])+2
+                    curr_count = parse(Int,atom_ring_class_array[x][count_ring_index][1])
+                    max_count_occurences = countmap(reduced_vec)[x] 
+                    atom_ring_class_array[x][count_ring_index] = string(curr_count+1 >= max_count_occurences
+                                                                        ? max_count_occurences
+                                                                        : curr_count+1, "RG", lastindex(vertices_vec))
                 end
             end
         end
