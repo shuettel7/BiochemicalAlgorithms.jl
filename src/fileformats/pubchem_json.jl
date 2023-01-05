@@ -513,13 +513,16 @@ end
 
 # NOTE: conformers are stored as frames
 function load_pubchem_json(fname::String, T=Float32)
-    pb = JSON3.read(read(fname, String), PCResult)
 
-    # for now, use the file name as the name for the molecule
-    mol = Molecule(fname)
-
+    pb = JSON3.read(isPcCompoundString(fname) 
+                ? string("{\"PC_Compounds\":[", fname[1:findlast(x -> x == '}', fname)], "]}")
+                : read(fname, String)
+                , PCResult)
+    
+    # adapted 20230105, use the cid in the PC_Compounds Vector as the name for the molecule
+    mol = Molecule(string("CID_", pb.PC_Compounds[1].id.id.cid))
+    
     for compound in pb.PC_Compounds
-
         if !isnothing(compound.atoms) && !isnothing(compound.coords)
             conformers = convert_coordinates(compound.coords)
 
@@ -586,4 +589,9 @@ function getPcAtomCharge(atmNum::Int, PcAtomInt_vec::Vector{PCAtomInt})
         end
     end
     return 0
+end
+
+
+function isPcCompoundString(fname::String)
+    return fname[1] == '{'
 end
