@@ -1,6 +1,16 @@
 using BiochemicalAlgorithms, DataFrames
 
-export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl
+export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl, load_multiCompound_pubchem_json_and_export_to_mol2
+
+
+function load_multiCompound_pubchem_json_and_export_to_mol2(fname::String, export_folder::String)
+    for (i,line) in enumerate(readlines(fname))
+        if i != 1 && i != lastindex(readlines(fname))
+            mol = load_pubchem_json(line)
+            export_mol2(mol, export_folder)
+        end
+    end
+end
 
 
 function export_all_gaff_paper_files_to_mol2()
