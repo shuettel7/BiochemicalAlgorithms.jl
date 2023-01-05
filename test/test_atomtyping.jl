@@ -34,10 +34,18 @@ end
 end
 
 
-@testset "gaff_atomtyping_full_sequence" begin
+@testset "gaff_atomtyping_complete_script" begin
+    using StatsBase
     mol = load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
     PreprocessingMolecule!(mol)
     get_molecule_atomtypes!(mol, "../data/antechamber/ATOMTYPE_GFF.DEF")
     gaff_postprocessing_all_conjugated_systems!(mol)
-    @test all(in(mol.atoms.atomtype).(["cl", "f", "f", "f", "os", "o", "n", "cx", "cx", "cx", "c3", "c1", "ca", "c1", "ca", "c3", "ca", "ca", "c", "ca", "ca", "hc", "hc", "hc", "hc", "hc", "ha", "hn", "ha", "ha"]))
+    expected_atomtypes_dict = countmap(["cl", "f", "f", "f", "os", "o", "n", "cx", "cx", "cx", "c3", "c1", "ca", "c1", "ca", "c3", "ca", "ca", "c", "ca", "ca", "hc", "hc", "hc", "hc", "hc", "ha", "hn", "ha", "ha"])
+    @test all(in(keys(countmap(mol.atoms.atomtype))).(keys(expected_atomtypes_dict)))
+    for key in keys(expected_atomtypes_dict)
+        @test haskey(countmap(mol.atoms.atomtype), key)
+        if haskey(countmap(mol.atoms.atomtype), key)
+            @test countmap(mol.atoms.atomtype)[key] == expected_atomtypes_dict[key]            
+        end
+    end
 end
