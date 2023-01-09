@@ -26,3 +26,12 @@ function load_all_gaff_paper_files()
     end
     return mol_df
 end
+
+
+function load_all_from_directory(directory::String)
+    mol_df = DataFrame([Vector{String}(), Vector{AbstractMolecule}()], ["molname", "abstract_mol"])
+    for i in filter(x -> x[end-4:end] == ".mol2", readdir(string(directory)))
+        push!(mol_df, (string("mol_a_", i[1:2]), load_mol2(string(directory, i))))
+    end
+    return mol_df
+end

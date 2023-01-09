@@ -1,7 +1,16 @@
 using BiochemicalAlgorithms, DataFrames
 
-export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl, load_multiCompound_pubchem_json_and_export_to_mol2
+export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl, load_multiCompound_pubchem_json_and_export_to_mol2, 
+    export_all_from_directory
 
+
+function export_all_from_directory(directory::String, toDirectory::String)
+    mol_df = load_all_from_directory(directory)
+    for num = (1:nrow(mol_df))
+        gaff_atomtyping_wrapper!(mol_df.abstract_mol[num])
+        export_mol2(mol_df.abstract_mol[num], toDirectory)
+    end
+end
 
 function load_multiCompound_pubchem_json_and_export_to_mol2(fname::String, export_folder::String)
     for (i,line) in enumerate(readlines(fname))
@@ -35,8 +44,8 @@ function compare_mol_antechamber_to_balljl(directory1::AbstractString, directory
         filename = basename(readdir(directory1)[i])
         mol1 = load_mol2(string(directory1, filename))
         mol2 = load_mol2(string(directory2, filename))
-        atomtype_comparison_vector = atomtype_comparison(mol1, mol2)
-        push!(comparison_df, (basename(mol1.name), atomtype_comparison_vector))
+        atomtype_comparison_vector = (isnothing(mol1) || isnothing(mol2)) ? ["missing"] : atomtype_comparison(mol1, mol2)
+        push!(comparison_df, (isnothing(mol1) ? basename(mol2.name) : basename(mol1.name), atomtype_comparison_vector))
     end
     return comparison_df
 end
