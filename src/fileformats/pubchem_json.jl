@@ -520,7 +520,9 @@ function load_pubchem_json(fname::String, T=Float32)
                 , PCResult)
     
     # adapted 20230105, use the cid in the PC_Compounds Vector as the name for the molecule
-    mol = Molecule(string("CID_", pb.PC_Compounds[1].id.id.cid))
+    mol = Molecule(isPcCompoundString(fname) 
+                    ? string("CID_", pb.PC_Compounds[1].id.id.cid)
+                    : fname)
     
     for compound in pb.PC_Compounds
         if !isnothing(compound.atoms) && !isnothing(compound.coords)
@@ -544,7 +546,7 @@ function load_pubchem_json(fname::String, T=Float32)
                             has_force = false,
                             frame_id = j,
                             properties = (!isnothing(compound.atoms.charge) && isInPcAtomAid(i, compound.atoms.charge)) 
-                                        ? Properties("PC_charge" => getPcAtomCharge(i, compound.atoms.charge))
+                                        ? Properties("Charge" => getPcAtomCharge(i, compound.atoms.charge))
                                         : Properties()
                     )
 
