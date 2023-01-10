@@ -22,11 +22,11 @@ function load_multiCompound_pubchem_json_and_export_to_mol2(fname::String, expor
 end
 
 
-function export_all_gaff_paper_files_to_mol2()
+function export_all_gaff_paper_files_to_mol2(toDirectory::String)
     mol_df = load_all_gaff_paper_files()
     for num = (1:nrow(mol_df))
         gaff_atomtyping_wrapper!(mol_df.abstract_mol[num])
-        export_mol2(mol_df.abstract_mol[num], "../huettel-msc/export_folder/validation_script_testing_folder/")
+        export_mol2(mol_df.abstract_mol[num], toDirectory)
     end
 end
 
