@@ -106,12 +106,14 @@ end
 
 function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, mol::AbstractMolecule)
     mol_graph = mol.properties["mol_graph"]
+    aromaticity_array = mol.properties["atom_aromaticity_array"]
     all_cycle_atoms = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     conjugated_atoms_vec = Vector{Int}()
     
     filtered_bonds_df = mol.bonds[(in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a1]) .&&
                                 in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a2]) .&&
-                                .!in(all_cycle_atoms).(mol.bonds.a1) .&& .!in(all_cycle_atoms).(mol.bonds.a2) .&& 
+                                !(true in in(aromaticity_array[mol.bonds.a1]).(["AR1","AR2"])) .&& 
+                                !(true in in(aromaticity_array[mol.bonds.a2]).(["AR1","AR2"])) .&& 
                                 (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
     charged_atoms = filter(x -> haskey(mol.atoms[x,:properties], "Charge") && mol.atoms[x,:properties]["Charge"] != Float32(0), mol.atoms.number)
     possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2, charged_atoms)))
@@ -120,31 +122,20 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
             push!(conjugated_atoms_vec, atmNum)
             continue
         end
-        oxygen_neighbors = filter(x -> mol.atoms.element[x] == Elements.O && lastindex(neighbors(mol_graph, x)) == 1, 
-                                            neighbors(mol_graph, atmNum))
+        oxygen_neighbors = filter(x -> mol.atoms.element[x] == Elements.O, neighbors(mol_graph, atmNum))
         oxygen_bonds = innerjoin(DataFrame(:a1 => vcat(repeat([atmNum], lastindex(oxygen_neighbors)), oxygen_neighbors), 
                                         :a2 => vcat(oxygen_neighbors, repeat([atmNum], lastindex(oxygen_neighbors)))), 
                                         filtered_bonds_df, on = [:a1, :a2])
-        bond_order_dict = countmap(oxygen_bonds.order)
-        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) >= 2 &&
-            haskey(bond_order_dict, BondOrder.T(1)) && haskey(bond_order_dict, BondOrder.T(2))
-            push!(conjugated_atoms_vec, atmNum)
-            maximum_DL_bonds = bond_order_dict[BondOrder.T(1)] <= bond_order_dict[BondOrder.T(2)] ? 
-                                bond_order_dict[BondOrder.T(1)] : bond_order_dict[BondOrder.T(2)]
-            for i in 1:maximum_DL_bonds
-                sb_oxygen = mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a1[i] == atmNum ? 
-                                mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a2[i] :
-                                mol.bonds[(mol.bonds.order .== BondOrder.T(1)),:].a1[i]
-                db_oxygen = mol.bonds[(mol.bonds.order .== BondOrder.T(2)),:].a1[i] == atmNum ? 
-                                mol.bonds[(mol.bonds.order .== BondOrder.T(2)),:].a2[i] :
-                                mol.bonds[(mol.bonds.order .== BondOrder.T(2)),:].a1[i]
-                push!(conjugated_atoms_vec, sb_oxygen, db_oxygen)
-            end
-        elseif in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) < 2
+        oxygen_bond_order_dict = countmap(oxygen_bonds.order)
+        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) >= 2 && 
+                haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] >= 2
+            append!(conjugated_atoms_vec, keys(countmap(vcat(oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a1], oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a2]))))
+        elseif in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) || 
+                (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] < 2)
             direct_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])
             if ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
                 (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1))
-                for neigh in neighbors(mol_graph, atmNum)
+                for neigh in filter(x -> !(true in in(mol.properties["atom_aromaticity_array"][x]).(["AR1","AR2"])), neighbors(mol_graph, atmNum))
                     neighbors_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][neigh, 
                                                             filter(x -> !in(neighborhood(mol_graph, atmNum, 1)).(x), neighbors(mol_graph, neigh))])
                     if !isempty(neighbors_bonds_countmap) && 
