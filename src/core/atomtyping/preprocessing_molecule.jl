@@ -107,6 +107,7 @@ end
 function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, mol::AbstractMolecule)
     mol_graph = mol.properties["mol_graph"]
     aromaticity_array = mol.properties["atom_aromaticity_array"]
+    bond_matrix = mol.properties["weighted_graph_adj_matrix"]
     all_cycle_atoms = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     conjugated_atoms_vec = Vector{Int}()
     
@@ -127,19 +128,22 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
                                         :a2 => vcat(oxygen_neighbors, repeat([atmNum], lastindex(oxygen_neighbors)))), 
                                         filtered_bonds_df, on = [:a1, :a2])
         oxygen_bond_order_dict = countmap(oxygen_bonds.order)
-        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) >= 2 && 
-                haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] >= 2
+        if in([Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) >= 2 && 
+                (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] >= 2)
             append!(conjugated_atoms_vec, keys(countmap(vcat(oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a1], oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a2]))))
-        elseif in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) || 
-                (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] < 2)
-            direct_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][atmNum, neighbors(mol_graph, atmNum)])
+        elseif in([Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && 
+                (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] < 2) ||
+                mol.atoms.element[atmNum] == Elements.C && !haskey(oxygen_bond_order_dict, BondOrder.T(2))
+            direct_bonds_countmap = countmap(bond_matrix[atmNum, neighbors(mol_graph, atmNum)])
             if ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
                 (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1))
-                for neigh in filter(x -> !(true in in(mol.properties["atom_aromaticity_array"][x]).(["AR1","AR2"])), neighbors(mol_graph, atmNum))
-                    neighbors_bonds_countmap = countmap(mol.properties["weighted_graph_adj_matrix"][neigh, 
+                for neigh in filter(x -> !(true in in(aromaticity_array[x]).(["AR1","AR2"])), neighbors(mol_graph, atmNum))
+                    neighbors_bonds_countmap = countmap(bond_matrix[neigh, 
                                                             filter(x -> !in(neighborhood(mol_graph, atmNum, 1)).(x), neighbors(mol_graph, neigh))])
+                    secNeigh_double_bond_to_oxygen = filter(x -> mol.atoms.element[x] == Elements.O && bond_matrix[neigh, x] == 2, neighbors(mol_graph, neigh))
                     if !isempty(neighbors_bonds_countmap) && 
-                            in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[neigh]) && 
+                            (in([Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[neigh]) ||
+                            (mol.atoms.element[neigh] == Elements.C && lastindex(secNeigh_double_bond_to_oxygen) == 0)) &&
                             ((haskey(neighbors_bonds_countmap, 2.0) && neighbors_bonds_countmap[2.0] >= 1) ||
                             (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1))
                         push!(conjugated_atoms_vec, atmNum)
@@ -273,7 +277,10 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, i
         pi_electrons = haskey(countmap(innerjoined_df.order), BondOrder.T(2)) ? countmap(innerjoined_df.order)[BondOrder.T(2)] * 2 : 0
         if (pi_electrons / lastindex(vertices_vec)) == 1.0
             assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) < 1 && lastindex(vertices_vec) > 5 && isempty(double_bond_to_non_ring_atom)
+        elseif (pi_electrons / lastindex(vertices_vec)) == 0
+            assign_all_in_vertices_vec_aromaticity_type("AR5", vertices_vec, reduced_vec, atom_ring_class_array)
+        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) < 1 && 
+                lastindex(vertices_vec) > 5 && isempty(double_bond_to_non_ring_atom)
             # check if Ring vertices_vec has intersections with other rings in molecule and if these are aromatic
             intersecting_atoms = filter(y -> in(vertices_vec).(y), keys(countmap(filter(x -> countmap(reduced_vec)[x] > 1, reduced_vec))))
             potentially_aromatic_intersecting_atoms = filter(x -> lastindex(filter(y -> y in intersecting_atoms, neighbors(mol_graph, x))) > 0, intersecting_atoms)
@@ -290,10 +297,13 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, i
             if !isempty(check_num_aromatic_bonds) && all(in([1]).(check_num_aromatic_bonds))
                 assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
             end
-        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) <= 1 && ONSP_present && lastindex(vertices_vec) > 4 
+        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) <= 1 && 
+                ONSP_present && lastindex(vertices_vec) > 4 && isempty(double_bond_to_non_ring_atom)
             assign_all_in_vertices_vec_aromaticity_type("AR2", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / lastindex(vertices_vec)) < 1/2
-            assign_all_in_vertices_vec_aromaticity_type("AR5", vertices_vec, reduced_vec, atom_ring_class_array)
+        elseif (pi_electrons / lastindex(vertices_vec)) != 0 && !isempty(double_bond_to_non_ring_atom) 
+            assign_all_in_vertices_vec_aromaticity_type("AR3", vertices_vec, reduced_vec, atom_ring_class_array)
+        else
+            assign_all_in_vertices_vec_aromaticity_type("AR4", vertices_vec, reduced_vec, atom_ring_class_array)
         end
     end
     return atom_ring_class_array
