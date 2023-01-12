@@ -13,7 +13,8 @@ function PreprocessingMolecule!(mol::AbstractMolecule)
     mol.properties["weighted_graph_adj_matrix"] = wgraph_adj_matrix = adjacency_matrix(mol.properties["mol_weighted_graph"])
 
     # Cycle detection and Vectors
-    mol.properties["chem_cycle_array"] = chem_cycle_array = cycle_basis(mol_graph)
+    # Antechamber only uses rings of size 3-9, anything larger is non-ring (NG in paper, NR here)
+    mol.properties["chem_cycle_array"] = chem_cycle_array = filter(x -> lastindex(x) <= 9, cycle_basis(mol_graph))
     ring_intersections_matrix = Matrix{Vector{Int64}}(undef, lastindex(chem_cycle_array), lastindex(chem_cycle_array))
     if lastindex(chem_cycle_array) > 1
         mol.properties["ring_intersections_matrix"] = ring_intersections_matrix = cycle_intersections(chem_cycle_array)
@@ -128,11 +129,11 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
                                         :a2 => vcat(oxygen_neighbors, repeat([atmNum], lastindex(oxygen_neighbors)))), 
                                         filtered_bonds_df, on = [:a1, :a2])
         oxygen_bond_order_dict = countmap(oxygen_bonds.order)
-        if in([Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) >= 2 && 
+        if in([Elements.C, Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && nrow(oxygen_bonds) >= 2 && 
                 (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] >= 2)
             append!(conjugated_atoms_vec, keys(countmap(vcat(oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a1], oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a2]))))
-        elseif in([Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) && 
-                (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] < 2) ||
+        elseif in([Elements.N, Elements.S, Elements.P]).(mol.atoms.element[atmNum]) &&
+                ((haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] < 2) || !haskey(oxygen_bond_order_dict, BondOrder.T(2))) ||
                 mol.atoms.element[atmNum] == Elements.C && !haskey(oxygen_bond_order_dict, BondOrder.T(2))
             direct_bonds_countmap = countmap(bond_matrix[atmNum, neighbors(mol_graph, atmNum)])
             if ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
@@ -140,10 +141,8 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
                 for neigh in filter(x -> !(true in in(aromaticity_array[x]).(["AR1","AR2"])), neighbors(mol_graph, atmNum))
                     neighbors_bonds_countmap = countmap(bond_matrix[neigh, 
                                                             filter(x -> !in(neighborhood(mol_graph, atmNum, 1)).(x), neighbors(mol_graph, neigh))])
-                    secNeigh_double_bond_to_oxygen = filter(x -> mol.atoms.element[x] == Elements.O && bond_matrix[neigh, x] == 2, neighbors(mol_graph, neigh))
                     if !isempty(neighbors_bonds_countmap) && 
-                            (in([Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[neigh]) ||
-                            (mol.atoms.element[neigh] == Elements.C && lastindex(secNeigh_double_bond_to_oxygen) == 0)) &&
+                            in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[neigh]) &&
                             ((haskey(neighbors_bonds_countmap, 2.0) && neighbors_bonds_countmap[2.0] >= 1) ||
                             (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1))
                         push!(conjugated_atoms_vec, atmNum)
