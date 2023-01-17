@@ -6,8 +6,8 @@
     @test nrow(def_file) == 296
     @test ncol(def_file) == 8
     @test def_file.type_name[9] == "ca"
-    @test all(in(["*"]).(def_file.residue_names))
-    @test typeof(def_file.atomic_number) == Vector{Int64}
+    @test all(in([nothing]).(def_file.residue_names))
+    @test typeof(def_file.atomic_number) == Vector{Union{Nothing, Int64}}
     @test def_file.atomic_property[5] == "[1DB,0DL]"
     @test def_file.CES[18] == "(XD3[sb',db])"
 end
@@ -36,16 +36,17 @@ end
 
 @testset "gaff_atomtyping_complete_script" begin
     using StatsBase
-    mol = load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
-    PreprocessingMolecule!(mol)
-    get_molecule_atomtypes!(mol, "../data/antechamber/ATOMTYPE_GFF.DEF")
-    gaff_postprocessing_all_conjugated_systems!(mol)
-    expected_atomtypes_dict = countmap(["cl", "f", "f", "f", "os", "o", "n", "cx", "cx", "cx", "c3", "c1", "ca", "c1", "ca", "c3", "ca", "ca", "c", "ca", "ca", "hc", "hc", "hc", "hc", "hc", "ha", "hn", "ha", "ha"])
-    @test all(in(keys(countmap(mol.atoms.atomtype))).(keys(expected_atomtypes_dict)))
-    for key in keys(expected_atomtypes_dict)
-        @test haskey(countmap(mol.atoms.atomtype), key)
-        if haskey(countmap(mol.atoms.atomtype), key)
-            @test countmap(mol.atoms.atomtype)[key] == expected_atomtypes_dict[key]            
+    for mol in load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
+        PreprocessingMolecule!(mol)
+        get_molecule_atomtypes!(mol, "../data/antechamber/ATOMTYPE_GFF.DEF")
+        gaff_postprocessing_all_conjugated_systems!(mol)
+        expected_atomtypes_dict = countmap(["cl", "f", "f", "f", "os", "o", "n", "cx", "cx", "cx", "c3", "c1", "ca", "c1", "ca", "c3", "ca", "ca", "c", "ca", "ca", "hc", "hc", "hc", "hc", "hc", "ha", "hn", "ha", "ha"])
+        @test all(in(keys(countmap(mol.atoms.atomtype))).(keys(expected_atomtypes_dict)))
+        for key in keys(expected_atomtypes_dict)
+            @test haskey(countmap(mol.atoms.atomtype), key)
+            if haskey(countmap(mol.atoms.atomtype), key)
+                @test countmap(mol.atoms.atomtype)[key] == expected_atomtypes_dict[key]            
+            end
         end
     end
 end
