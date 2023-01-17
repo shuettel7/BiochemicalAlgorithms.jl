@@ -600,7 +600,11 @@ function load_pubchem_json(fname::String, T=Float32)
 
     for compound in pb.PC_Compounds
         # for now, use the file name as the name for the molecule
-        mol = Molecule(fname * "_" * string(compound.id.id.cid))
+        mol = Molecule(contains(fname, string(compound.id.id.cid)) 
+                        ? fname
+                        : (!isnothing(findlast('.', fname)) 
+                        ? string(fname[1:findlast('.', fname)-1], "_CID_", string(compound.id.id.cid), fname[findlast('.', fname):lastindex(fname)])
+                        : string(fname, "_CID_", string(compound.id.id.cid))))
         parse_atoms!(mol, compound, T)
         parse_bonds!(mol, compound, T)
         parse_props!(mol, compound)

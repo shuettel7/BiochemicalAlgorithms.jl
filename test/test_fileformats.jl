@@ -24,7 +24,7 @@ end
 
         mol = mols[1]
         @test mol isa Molecule
-        @test mol.name == "data/aspirin_pug.json_2244"
+        @test mol.name == "data/aspirin_pug_CID_2244.json"
         @test length(mol.properties) == 3
 
         @test count_atoms(mol) == 21
