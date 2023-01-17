@@ -17,45 +17,24 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
         def_curr_df = copy(def_file_df)
         num_H_neighbors = countmap(in(["H1"]).(atmprops_df.ElementWithNeighborCount[atmprops_df.Neighbors[i]]))[true]
         num_EWG_groups = mol.properties["atmprops_df"].num_EWG_groups[i]
+
+        # start with prefiltering for more easily checkable properties
         def_curr_df = @subset def_curr_df @byrow begin
-            :atomic_number == Int(mol.atoms.element[i])
+            (isnothing(:residue_names) || (typeof(mol) == PDBMolecule && :residue_names == mol.atoms.residue_name[i]))
+            (isnothing(:atomic_number) || :atomic_number == Int(mol.atoms.element[i])) &&
+            (isnothing(:num_neighbors) || :num_neighbors == lastindex(atmprops_df.Neighbors[i])) &&
+            (isnothing(:num_H_bonds) || :num_H_bonds == num_H_neighbors) &&
+            (isnothing(:electron_withdrawal_groups) || :electron_withdrawal_groups == num_EWG_groups) 
         end
-        df_match = false
-        while !df_match && nrow(def_curr_df) > 0
-            match_list = [0 for _ in 1:6]
-            for (colnum, coldata) in enumerate(eachrow(def_curr_df)[1][3:8])
-                if coldata == "*" || coldata == -1
-                    match_list[colnum] = 2
-                    continue
-                else
-                    if colnum == 1 && coldata == Int(mol.atoms.element[i])
-                        match_list[colnum] = 1
-                    end
-                    if colnum == 2 && coldata == lastindex(atmprops_df.Neighbors[i])
-                        match_list[colnum] = 1
-                    end
-                    if colnum == 3 && coldata == num_H_neighbors
-                        match_list[colnum] = 1
-                    end
-                    if colnum == 4 && coldata == num_EWG_groups
-                        match_list[colnum] = 1
-                    end
-                    if colnum == 5 && APS_processor(coldata, atmprops_df[i,:])
-                        match_list[colnum] = 1
-                    end
-                    if colnum == 6 && CES_processor(CES_parser(coldata, mol, i), atmprops_df, mol, i)
-                        match_list[colnum] = 1
-                    end
-                end
-            end
-            if all(in([1, 2]).(match_list))
-                df_match = true
-                mol.atoms.atomtype[i] = def_curr_df.type_name[1]
-            elseif nrow(def_curr_df) == 0
-                mol.atoms.atomtype[i] = "DU" # DU is from TRIPOS standard. maybe different expression?
-            else
-                def_curr_df = def_curr_df[2:nrow(def_curr_df), :]
+
+        # only do atom_property and CES checks if there are more atomtypes 
+        # than the "unknown atomtype" ("DU" for GAFF) in def_curr_df
+        if nrow(def_curr_df) > 1 
+            def_curr_df = @subset def_curr_df @byrow begin
+                (isnothing(:atomic_property) || APS_processor(:atomic_property, atmprops_df[i,:])) &&
+                (isnothing(:CES) || CES_processor(CES_parser(:CES, mol, i), atmprops_df, mol, i))
             end
         end
+        mol.atoms.atomtype[i] = def_curr_df.type_name[1]
     end
 end
