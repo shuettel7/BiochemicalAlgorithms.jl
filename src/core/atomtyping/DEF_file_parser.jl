@@ -4,54 +4,32 @@ using DataFrames
 export load_atomtyping_DEF
 
 function load_atomtyping_DEF(mapfile::AbstractString)
-    df = DataFrame([Vector{String}(), Vector{String}(), 
-                    Vector{Int64}(), Vector{Int64}(), Vector{Int64}(), Vector{Int64}(), 
-                    Vector{String}(), Vector{String}()],
+    df = DataFrame([Vector{Union{String, Nothing}}(), Vector{Union{String, Nothing}}(), 
+                    Vector{Union{Int, Nothing}}(), Vector{Union{Int, Nothing}}(), Vector{Union{Int, Nothing}}(), Vector{Union{Int, Nothing}}(), 
+                    Vector{Union{String, Nothing}}(), Vector{Union{String, Nothing}}()],
                     ["type_name", "residue_names", "atomic_number", "num_neighbors",
                     "num_H_bonds", "electron_withdrawal_groups", "atomic_property", "CES"])
     
-    for line in readlines(mapfile)
-        if lastindex(line)>=3 && line[1:3] == "ATD"
-            push!(df, lines_for_df(line))
-        end
+    for line in filter(x -> lastindex(x) > 3 && x[1:3] == "ATD", readlines(mapfile))
+        push!(df, lines_for_df(line))
     end
     
     return df
 end
 
 function lines_for_df(line::AbstractString)
-    col_data_list = Vector{Union{AbstractString, Int}}()
+    row_data_list = Vector{Union{AbstractString, Int, Nothing}}()
     line_data = split(line)
     for i = (2:9)
-        if i <= 3
-            if (!isassigned(line_data, i) || line_data[i] == "&")
-                append!(col_data_list, ["*"])
-            else
-                append!(col_data_list, [line_data[i]]) 
-            end
-        elseif i > 3 && i < 8 
-            if isassigned(line_data, i)
-                if (line_data[i] == "*" || line_data[i] == "&")
-                    append!(col_data_list, [-1])
-                else
-                    append!(col_data_list, [parse(Int, line_data[i])])
-                end
-            else
-                append!(col_data_list, [-1])
-            end
-        elseif i >= 8
-            if isassigned(line_data, i)
-                if (line_data[i] == "*" || line_data[i] == "&")
-                    append!(col_data_list, ["*"])
-                else
-                    append!(col_data_list, [line_data[i]]) 
-                end
-            else 
-                append!(col_data_list, ["*"])
-            end            
-        end 
-    end   
-    return col_data_list
+        if (!isassigned(line_data, i) || in(["&", "*"]).(line_data[i]))
+            append!(row_data_list, [nothing])
+        elseif isnumeric(line_data[i][1])
+            append!(row_data_list, [parse(Int, line_data[i])]) 
+        else
+            append!(row_data_list, [line_data[i]])
+        end
+    end
+    return row_data_list
 end
 
 
