@@ -67,18 +67,20 @@ end
 end
 
 @testset "mol2_export" begin
-        export_mol2(load_pubchem_json("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.json"), "data/")
+        for mol in load_pubchem_json("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.json")
+                export_mol2(mol, "data/")
 
-        @test readlines("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")[1] == "@<TRIPOS>MOLECULE"
-        @test readlines("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")[8] == "@<TRIPOS>ATOM"
-        @test readlines("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")[39] == "@<TRIPOS>BOND"
+                @test readlines("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")[1] == "@<TRIPOS>MOLECULE"
+                @test readlines("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")[8] == "@<TRIPOS>ATOM"
+                @test readlines("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")[39] == "@<TRIPOS>BOND"
 
-        rm("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")
+                rm("data/Export_test_molecule_Sustiva_Efavirenz_Conformer3D_CID_64139.mol2")
 
-        export_mol2(load_pdb("data/Export_test_molecule_6dny.pdb"), "data/")
+                export_mol2(load_pdb("data/Export_test_molecule_6dny.pdb"), "data/")
 
-        @test readlines("data/Export_test_molecule_6dny.mol2")[1] == "@<TRIPOS>MOLECULE"
-        @test readlines("data/Export_test_molecule_6dny.mol2")[8] == "@<TRIPOS>ATOM"
+                @test readlines("data/Export_test_molecule_6dny.mol2")[1] == "@<TRIPOS>MOLECULE"
+                @test readlines("data/Export_test_molecule_6dny.mol2")[8] == "@<TRIPOS>ATOM"
 
-        rm("data/Export_test_molecule_6dny.mol2")
+                rm("data/Export_test_molecule_6dny.mol2")
+        end
 end
