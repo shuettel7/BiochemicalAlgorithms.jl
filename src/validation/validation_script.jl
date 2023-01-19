@@ -1,13 +1,22 @@
 using BiochemicalAlgorithms, DataFrames
 
 export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl, load_multiCompound_pubchem_json_and_export_to_mol2, 
-    export_all_from_directory
+    export_all_from_directory_with_gaff, export_all_from_directory
 
 
-function export_all_from_directory(directory::String, toDirectory::String)
+function export_all_from_directory_with_gaff(directory::String, toDirectory::String)
     mol_df = load_all_from_directory(directory)
-    for num = (1:nrow(mol_df))
+    Threads.@threads for num = (1:nrow(mol_df))
         gaff_atomtyping_wrapper!(mol_df.abstract_mol[num])
+        export_mol2(mol_df.abstract_mol[num], toDirectory)
+    end
+end
+
+function export_all_from_directory(directory::String, toDirectory::String, def_file::String)
+    mol_df = load_all_from_directory(directory)
+    Threads.@threads for num = (1:nrow(mol_df))
+        PreprocessingMolecule!(mol_df.abstract_mol[num])
+        get_molecule_atomtypes!(mol_df.abstract_mol[num], def_file)
         export_mol2(mol_df.abstract_mol[num], toDirectory)
     end
 end
