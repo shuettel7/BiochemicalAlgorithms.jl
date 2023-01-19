@@ -530,7 +530,7 @@ function parse_atoms!(mol::Molecule, compound::PCCompound, T=Float32)
                             has_force = false,
                             frame_id = j,
                             properties = (!isnothing(compound.atoms.charge) && isInPcAtomAid(i, compound.atoms.charge)) 
-                                        ? Properties("PC_charge" => getPcAtomCharge(i, compound.atoms.charge))
+                                        ? Properties("Charge" => getPcAtomCharge(i, compound.atoms.charge))
                                         : Properties()
                     )
 
