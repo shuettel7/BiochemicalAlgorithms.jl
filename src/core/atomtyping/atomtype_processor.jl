@@ -13,10 +13,10 @@ function get_molecule_atomtypes!(mol::AbstractMolecule, mapfile::AbstractString)
     atmprops_df = mol.properties["atmprops_df"]
     
     # loop over atoms, prefilter dataframe by element and neighbor count
-    for i = (1:nrow(mol.atoms))
+    Threads.@threads for i = (1:nrow(mol.atoms))
         def_curr_df = copy(def_file_df)
         num_H_neighbors = countmap(in(["H1"]).(atmprops_df.ElementWithNeighborCount[atmprops_df.Neighbors[i]]))[true]
-        num_EWG_groups = mol.properties["atmprops_df"].num_EWG_groups[i]
+        num_EWG_groups = mol.atoms[i, :properties]["num_EWG_groups"]
 
         # start with prefiltering for more easily checkable properties
         def_curr_df = @subset def_curr_df @byrow begin
