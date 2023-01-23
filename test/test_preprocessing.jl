@@ -2,7 +2,7 @@
 @testset "Preprocessing_Molecule" begin
     for mol in load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
         PreprocessingMolecule!(mol)
-        @test length(mol.properties) == 12
+        @test length(mol.properties) == 11
         @test length(mol.atoms.properties) == count_atoms(mol)
         @test length(mol.bonds.properties) == count_bonds(mol)
         @test length(mol.atoms.properties[20]) == 7

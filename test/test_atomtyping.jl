@@ -44,7 +44,7 @@ end
         @test all(in(keys(countmap(mol.atoms.atomtype))).(keys(expected_atomtypes_dict)))
         for key in keys(expected_atomtypes_dict)
             @test haskey(countmap(mol.atoms.atomtype), key)
-            if haskey(countmap(mol.atoms.atomtype), key)
+            if haskey(countmap(mol.atoms.atomtype, alg=:dict), key)
                 @test countmap(mol.atoms.atomtype)[key] == expected_atomtypes_dict[key]            
             end
         end
