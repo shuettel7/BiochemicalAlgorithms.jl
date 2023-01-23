@@ -1,9 +1,10 @@
 
 export gaff_postprocessing_all_conjugated_systems!
 
-function gaff_postprocessing_all_conjugated_systems!(mol::AbstractMolecule)
+function gaff_postprocessing_all_conjugated_systems!(mol::Molecule)
     mol_graph = mol.properties["mol_graph"]
-    group_atomtypes_dict = Dict(1 => ["cc", "ce", "cp", "nc", "ne", "pc", "pe"],
+    group_atomtypes_dict = Dict{Int, Vector{String}}(
+                                1 => ["cc", "ce", "cp", "nc", "ne", "pc", "pe"],
                                 2 => ["cd", "cf", "cq", "nd", "nf", "pd", "pf"])
 
     group1_conjugated_atoms = mol.atoms[(in(group_atomtypes_dict[1]).(mol.atoms[!,:atomtype])),:]
@@ -31,9 +32,10 @@ function gaff_postprocessing_all_conjugated_systems!(mol::AbstractMolecule)
 end
 
 
-function conjAtm_path_builder!(group1_conjugated_atoms::DataFrame, path_vec::Vector{Int}, mol::AbstractMolecule, depth::Int)
+function conjAtm_path_builder!(group1_conjugated_atoms::DataFrame, path_vec::Vector{Int}, mol::Molecule, depth::Int64)
     mol_graph = mol.properties["mol_graph"]
-    group_atomtypes_dict = Dict(1 => ["cc", "ce", "cp", "nc", "ne", "pc", "pe"],
+    group_atomtypes_dict = Dict{Int, Vector{String}}(
+                                1 => ["cc", "ce", "cp", "nc", "ne", "pc", "pe"],
                                 2 => ["cd", "cf", "cq", "nd", "nf", "pd", "pf"])
     source_atom = path_vec[1]
     previous_atom = path_vec[lastindex(path_vec)-1]
@@ -43,20 +45,20 @@ function conjAtm_path_builder!(group1_conjugated_atoms::DataFrame, path_vec::Vec
     bond_in_conjugated_atoms = innerjoin(combination_df, mol.bonds, on = [:a1, :a2])
 
     if haskey(bond_in_conjugated_atoms.properties[1], "TRIPOS_tag") && bond_in_conjugated_atoms.properties[1]["TRIPOS_tag"] == "ar"
-        if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[1] && in(group_atomtypes_dict[1]).(mol.atoms.atomtype[curr_atom])
+        if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[1] && in(mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])
             mol.atoms.atomtype[curr_atom] = group_atomtypes_dict[2][findfirst(x -> x == mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])]
         end
     elseif bond_in_conjugated_atoms.order[1] == BondOrder.T(1)
-        if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[2] && in(group_atomtypes_dict[1]).(mol.atoms.atomtype[curr_atom])
+        if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[2] && in(mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])
             mol.atoms.atomtype[curr_atom] = group_atomtypes_dict[2][findfirst(x -> x == mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])]
         end
     elseif bond_in_conjugated_atoms.order[1] == BondOrder.T(2)
-        if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[1] && in(group_atomtypes_dict[1]).(mol.atoms.atomtype[curr_atom])
+        if mol.atoms.atomtype[previous_atom] in group_atomtypes_dict[1] && in(mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])
             mol.atoms.atomtype[curr_atom] = group_atomtypes_dict[2][findfirst(x -> x == mol.atoms.atomtype[curr_atom], group_atomtypes_dict[1])]
         end
     end
-    next_neighbors_vec = filter(x -> !in(path_vec).(x) && x in neighbors(mol_graph, curr_atom) && 
-                                    in(group1_conjugated_atoms.number).(x), neighborhood(mol_graph, source_atom, depth+1))
+    next_neighbors_vec = filter(x -> !in(x, path_vec) && x in neighbors(mol_graph, curr_atom) && 
+                                    x in group1_conjugated_atoms.number, neighborhood(mol_graph, source_atom, depth+1))
                     
     all_paths = Vector{Vector{Int}}()
     if isempty(next_neighbors_vec)
