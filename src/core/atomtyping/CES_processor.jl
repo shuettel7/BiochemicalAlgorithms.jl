@@ -1,5 +1,5 @@
 
-function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int)
+function CES_parser(colstring::String, mol::Molecule, sourceAtomNum::Int64)
     
     open_chars_list = ['(', '[', '<']
     close_chars_list = [')', ']', '>']
@@ -65,11 +65,11 @@ function CES_parser(colstring::String, mol::AbstractMolecule, sourceAtomNum::Int
 end
 
 
-function CES_processor(CES_df::DataFrame, atmprops_df::DataFrame, mol::AbstractMolecule, atomnum::Int)
+function CES_processor(CES_df::DataFrame, mol::Molecule, atomnum::Int64)
     # use DEF file and information from CES_parser process to cycle through
     # DEF file until Atomtype is assigned or no more criteria fit (return error?)
 
-    all_possible_paths = path_builder(CES_df, atmprops_df, [0], [atomnum], mol, 0)
+    all_possible_paths = path_builder(CES_df, [0], [atomnum], mol, 0)
     
     return path_checker(CES_df, all_possible_paths)
 end
@@ -80,7 +80,7 @@ function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
         return false 
     elseif isempty(allPossiblePaths)
         return false
-    elseif length(countmap(allPossiblePaths)) != number_of_ces_paths(CES_df)
+    elseif length(countmap(allPossiblePaths, alg=:dict)) != number_of_ces_paths(CES_df)
         # if two paths are the same and should be different, but also not same length of the searched paths
         return false
     end
@@ -93,7 +93,7 @@ function number_of_ces_paths(CES_df::DataFrame)
 end
 
 
-function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::AbstractMolecule, depth::Int)
+function path_builder(CES_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPath_vec::Vector{Int}, mol::Molecule, depth::Int64)
     # build the atom paths while checking for the CES demands, return Vector of all Paths which are stored as a Vector{Int}
     cesRow = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]),:]
     mol_graph = mol.properties["mol_graph"]
@@ -101,7 +101,8 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtom
     curr_atom = atmPath_vec[lastindex(atmPath_vec)]
     previous_atom = lastindex(atmPath_vec) > 1 ? atmPath_vec[lastindex(atmPath_vec)-1] : -1
     
-    XX_XA_XB_XD_dict = Dict("XX" => [Elements.C, Elements.N, Elements.O, Elements.S, Elements.P],
+    XX_XA_XB_XD_dict = Dict{String, Vector{ElementType}}(
+                            "XX" => [Elements.C, Elements.N, Elements.O, Elements.S, Elements.P],
                             "XA" => [Elements.S, Elements.O],
                             "XB" => [Elements.N, Elements.P],
                             "XC" => [Elements.F, Elements.Cl, Elements.I, Elements.Br],
@@ -113,8 +114,8 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtom
     check_expr = Expr(:&&)
 
     # Element properties check
-    if in(keys(XX_XA_XB_XD_dict)).(cesRow.Element[1])
-        push!(check_expr.args, in(XX_XA_XB_XD_dict[cesRow.Element[1]]).(mol.atoms.element[curr_atom]))
+    if in(cesRow.Element[1], keys(XX_XA_XB_XD_dict))
+        push!(check_expr.args, in(mol.atoms.element[curr_atom], XX_XA_XB_XD_dict[cesRow.Element[1]]))
     elseif !isempty(cesRow.Element) 
         push!(check_expr.args, (cesRow.Element[1] == enumToString(mol.atoms.element[curr_atom])))
     end
@@ -126,8 +127,7 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtom
     
     # check CES_APS against that of current atom
     if lastindex(atmPath_vec) > 1
-        push!(check_expr.args, CES_APS_processor(cesRow.CES_APS[1], atmprops_df, curr_atom, 
-                                                previous_atom, mol))
+        push!(check_expr.args, CES_APS_processor(cesRow.CES_APS[1], curr_atom, previous_atom, mol))
     end
     
     # evaluate the built expression to a boolean
@@ -148,7 +148,7 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtom
         nextCesAtomId_array = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
         for atm_neigh in curr_atm_neighbors
             for nextCesAtom in nextCesAtomId_array
-                append!(filtered_atm_paths, path_builder(CES_df, atmprops_df, vcat(previousCesAtomIds, [nextCesAtom]), 
+                append!(filtered_atm_paths, path_builder(CES_df, vcat(previousCesAtomIds, [nextCesAtom]), 
                         vcat(atmPath_vec, [atm_neigh]), mol, depth+1))
             end
         end
@@ -157,7 +157,7 @@ function path_builder(CES_df::DataFrame, atmprops_df::DataFrame, previousCesAtom
 end
 
 
-function CES_APS_processor(colstring::String, atmprops_df::DataFrame, curr_atom::Int, pre_atom::Int, mol::AbstractMolecule)
+function CES_APS_processor(colstring::String, curr_atom::Int64, pre_atom::Int64, mol::Molecule)
     if !isempty(colstring) && colstring[1] == '[' && colstring[lastindex(colstring)] == ']'
         colstring = chop(colstring, head = 1, tail = 1)
     end
@@ -168,6 +168,7 @@ function CES_APS_processor(colstring::String, atmprops_df::DataFrame, curr_atom:
     
     bond_symbol_string = enumToString(BondShortOrderType(Int(
                         mol.properties["weighted_graph_adj_matrix"][curr_atom, pre_atom])))
+    atmprops_df = mol.properties["atmprops_df"]
 
     and_list = split(colstring, ',')
     and_expr_conditionals = Expr(:&&)
