@@ -18,7 +18,7 @@ function load_atomtyping_DEF(mapfile::AbstractString)
 end
 
 function lines_for_df(line::AbstractString)
-    row_data_list = Vector{Union{AbstractString, Int, Nothing}}()
+    row_data_list = Vector{Union{AbstractString, Int64, Nothing}}()
     line_data = split(line)
     for i = (2:9)
         if (!isassigned(line_data, i) || in(["&", "*"]).(line_data[i]))
