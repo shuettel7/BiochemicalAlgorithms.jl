@@ -6,7 +6,7 @@ export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, c
 
 function export_all_from_directory_with_gaff(directory::String, toDirectory::String)
     mol_df = load_all_from_directory(directory)
-    Threads.@threads for num = (1:nrow(mol_df))
+    for num = (1:nrow(mol_df))
         gaff_atomtyping_wrapper!(mol_df.abstract_mol[num])
         export_mol2(mol_df.abstract_mol[num], toDirectory)
     end
@@ -14,10 +14,19 @@ end
 
 function export_all_from_directory(directory::String, toDirectory::String, def_file::String)
     mol_df = load_all_from_directory(directory)
-    Threads.@threads for num = (1:nrow(mol_df))
-        PreprocessingMolecule!(mol_df.abstract_mol[num])
-        get_molecule_atomtypes!(mol_df.abstract_mol[num], def_file)
-        export_mol2(mol_df.abstract_mol[num], toDirectory)
+    if contains(def_file, "ATOMTYPE_GFF")
+        Threads.@threads for num = (1:nrow(mol_df))
+            PreprocessingMolecule!(mol_df.abstract_mol[num])
+            get_molecule_atomtypes!(mol_df.abstract_mol[num], def_file)
+            gaff_postprocessing_all_conjugated_systems!(mol_df.abstract_mol[num])
+            export_mol2(mol_df.abstract_mol[num], toDirectory)
+        end
+    else
+        Threads.@threads for num =  (1:nrow(mol_df))
+            PreprocessingMolecule!(mol_df.abstract_mol[num])
+            get_molecule_atomtypes!(mol_df.abstract_mol[num], def_file)
+            export_mol2(mol_df.abstract_mol[num], toDirectory)
+        end
     end
 end
 
@@ -40,14 +49,14 @@ function export_all_gaff_paper_files_to_mol2(toDirectory::String)
 end
 
 
-function export_all_pdb_test_files_to_mol2(file_location_a::AbstractString, export_to_dir_location::AbstractString)
+function export_all_pdb_test_files_to_mol2(file_location_a::String, export_to_dir_location::String)
     mol_df = load_all_pdb_test_files(file_location_a)
     for num = (1:nrow(mol_df))
         export_mol2(mol_df.abstract_mol[num], export_to_dir_location)
     end
 end
 
-function compare_mol_antechamber_to_balljl(directory1::AbstractString, directory2::AbstractString)
+function compare_mol_antechamber_to_balljl(directory1::String, directory2::String)
     comparison_df = DataFrame([Vector{String}(), Vector{Vector{Any}}()], ["molname", "values"])
     for i = (1:lastindex(readdir(directory1)))
         filename = basename(readdir(directory1)[i])
@@ -59,7 +68,7 @@ function compare_mol_antechamber_to_balljl(directory1::AbstractString, directory
     return comparison_df
 end
 
-function atomtype_comparison(mol1::AbstractMolecule, mol2::AbstractMolecule)
+function atomtype_comparison(mol1::Molecule, mol2::Molecule)
     result_list = Vector{Any}()
     if nrow(mol1.atoms) != nrow(mol2.atoms)
         return "Molecules are of different size"
