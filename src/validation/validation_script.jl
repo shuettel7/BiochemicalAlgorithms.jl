@@ -1,7 +1,7 @@
 using BiochemicalAlgorithms, DataFrames
 
 export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl, load_multiCompound_pubchem_json_and_export_to_mol2, 
-    export_all_from_directory_with_gaff, export_all_from_directory
+    export_all_from_directory_with_gaff, export_all_from_directory, atomtype_comparison
 
 
 function export_all_from_directory_with_gaff(directory::String, toDirectory::String)
@@ -15,7 +15,7 @@ end
 function export_all_from_directory(directory::String, toDirectory::String, def_file::String)
     mol_df = load_all_from_directory(directory)
     if contains(def_file, "ATOMTYPE_GFF")
-        Threads.@threads for num = (1:nrow(mol_df))
+        for num = (1:nrow(mol_df))
             PreprocessingMolecule!(mol_df.abstract_mol[num])
             get_molecule_atomtypes!(mol_df.abstract_mol[num], def_file)
             gaff_postprocessing_all_conjugated_systems!(mol_df.abstract_mol[num])
@@ -82,5 +82,8 @@ function atomtype_comparison(mol1::Molecule, mol2::Molecule)
     if isempty(result_list)
         return [true]
     end
+    # for atmNum in result_list 
+    #     println("atmNum: ", atmNum, "  ", basename(mol1.name), " atomtype: ", mol1.atoms.atomtype[atmNum], "  ; ", basename(mol2.name), " atomtype: ", mol2.atoms.atomtype[atmNum])
+    # end
     return result_list
 end

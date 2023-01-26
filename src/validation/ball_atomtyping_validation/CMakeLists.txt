@@ -1,6 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1)
 PROJECT(ball_atomtyping_validation CXX)
-SET(CMAKE_CXX_STANDARD 14)
+SET(CMAKE_CXX_STANDARD 17)
 
 # BALL-specific setup
 SET(BALL_DIR "/mnt/c/Users/Sam/source/repos/ball/build/cmake")
