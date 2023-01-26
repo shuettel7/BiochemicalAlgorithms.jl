@@ -45,6 +45,7 @@ function load_mol2(fname::AbstractString, T = Float32)
             properties_dict = Dict{String, Union{T, String}}()
             if order_ == BondOrder.Unknown && line_elements[4] == "ar" || 
                 order_ == BondOrder.Single && line_elements[4] == "am"
+                println(line_elements[4])
                 properties_dict["TRIPOS_tag"] = string(line_elements[4])
             end
             new_bond = (a1 = parse(Int64, line_elements[2]),
@@ -145,9 +146,6 @@ function export_mol2(mol::Molecule, filelocation::String)
             origin_atom_id = build_flush_right_string(mol.bonds.a1[i], 6)
             target_atom_id = build_flush_right_string(mol.bonds.a2[i], 6)
             bond_type = string(" ", build_flush_left_string(Int(mol.bonds.order[i]), 4))
-            if haskey(mol.bonds.properties[i], "TRIPOS_tag")
-                bond_type = string(" ", build_flush_left_string(mol.bonds.properties[i]["TRIPOS_tag"], 4))
-            end
             # status_bits never set by user, TYPECOL, GROUP, CAP, BACKBONE, DICT and INTERRES 
             # are possible according to Tripos mol2 specification
             bond_section_line = string(bond_id, origin_atom_id, target_atom_id, bond_type, "\n")
