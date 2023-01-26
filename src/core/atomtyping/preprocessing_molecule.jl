@@ -5,7 +5,6 @@ export PreprocessingMolecule!, ClearPreprocessingMolecule!
 
 
 function PreprocessingMolecule!(mol::Molecule)
-    ClearPreprocessingMolecule!(mol)
     # Graph representation of Molecule
     mol.properties["mol_graph"] = mol_graph = build_graph(mol)
     mol.properties["adjacency_matrix"] = adjacency_matrix(mol.properties["mol_graph"])
@@ -120,16 +119,20 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
             push!(conjugated_atoms_vec, atmNum)
             continue
         end
+
+        # oxygen neighbors
         oxygen_neighbors = filter(x -> mol.atoms.element[x] == Elements.O, neighbors(mol_graph, atmNum))
         oxygen_bonds = innerjoin(DataFrame(:a1 => vcat(repeat([atmNum], lastindex(oxygen_neighbors)), oxygen_neighbors), 
                                         :a2 => vcat(oxygen_neighbors, repeat([atmNum], lastindex(oxygen_neighbors)))), 
                                         filtered_bonds_df, on = [:a1, :a2])
         oxygen_bond_order_dict = countmap(oxygen_bonds.order, alg=:dict)
+
         if in(mol.atoms.element[atmNum], [Elements.C, Elements.N, Elements.S, Elements.P]) && nrow(oxygen_bonds) >= 2 && 
                 (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] >= 2)
-            append!(conjugated_atoms_vec, keys(countmap(vcat(oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a1], oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a2]), alg=:dict)))
-        elseif in(mol.atoms.element[atmNum], [Elements.N, Elements.S, Elements.P]) &&
-                ((haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] < 2) || !haskey(oxygen_bond_order_dict, BondOrder.T(2))) ||
+            append!(conjugated_atoms_vec, keys(countmap(vcat(oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a1], 
+                                                        oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a2]), alg=:dict)))
+        elseif (in(mol.atoms.element[atmNum], [Elements.N, Elements.S, Elements.P]) &&
+                (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] == 1 || !haskey(oxygen_bond_order_dict, BondOrder.T(2)))) ||
                 mol.atoms.element[atmNum] == Elements.C && !haskey(oxygen_bond_order_dict, BondOrder.T(2))
             direct_bonds_countmap = countmap(bond_matrix[atmNum, neighbors(mol_graph, atmNum)], alg=:dict)
             if ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
@@ -179,7 +182,7 @@ end
 
 function amide_processor(mol::Molecule, mol_graph::Graph, ElementWNeighbourCount_vector::Vector{String})
     amide_bond_vector = Vector{Tuple{Int64, Int64}}()
-    nitrogen_atoms_array = mol.atoms[(mol.atoms[!, :element] .== Elements.N), :number]
+    nitrogen_atoms_array = mol.atoms[(mol.atoms[!, :element] .== Elements.N .&& in("NG", mol.properties["atom_aromaticity_array"][mol.atoms.number])), :number]
     for nitrogen in nitrogen_atoms_array
         for amide_neigh in neighbors(mol_graph, nitrogen)
             if lastindex(neighbors(mol_graph, amide_neigh)) > 2 && 
@@ -265,9 +268,10 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
         # check number of pi electrons
         subVector = copy(vertices_vec)
         shifted_subVector = vcat(subVector[2:lastindex(subVector)], subVector[1])
-        ring_bonds = DataFrame(:a1 => [subVector; shifted_subVector], :a2 => [shifted_subVector; subVector])
-        innerjoined_df = innerjoin(ring_bonds, mol.bonds, on = [:a1, :a2])
-        pi_electrons = haskey(countmap(innerjoined_df.order, alg=:dict), BondOrder.T(2)) ? countmap(innerjoined_df.order, alg=:dict)[BondOrder.T(2)] * 2 : 0
+        ring_bonds_df = innerjoin(DataFrame(:a1 => [subVector; shifted_subVector], :a2 => [shifted_subVector; subVector]), mol.bonds, on = [:a1, :a2])
+        ring_bonds_with_tripos_ar_tag_df = filter(:properties => x -> haskey(x,"TRIPOS_tag") && x["TRIPOS_tag"] == "ar", ring_bonds_df)
+        ring_bonds_order_2 = haskey(countmap(ring_bonds_df.order, alg=:dict), BondOrder.T(2)) ? countmap(ring_bonds_df.order, alg=:dict)[BondOrder.T(2)] : 0
+        pi_electrons = (ring_bonds_order_2 > 0 || nrow(ring_bonds_with_tripos_ar_tag_df) > 0) ? (ring_bonds_order_2 + nrow(ring_bonds_with_tripos_ar_tag_df)) * 2 : 0
         if (pi_electrons / lastindex(vertices_vec)) == 1.0
             assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
         elseif (pi_electrons / lastindex(vertices_vec)) == 0
