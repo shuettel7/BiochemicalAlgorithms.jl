@@ -49,4 +49,13 @@ end
             end
         end
     end
+
+    mol = load_mol2("data/TEST_GAFFPROCESSING_MOLECULE_Ceftriaxone_Conformer3D_CID_5479530.mol2")
+    PreprocessingMolecule!(mol)
+    get_molecule_atomtypes!(mol, "../data/antechamber/ATOMTYPE_GFF.DEF")
+    gaff_postprocessing_all_conjugated_systems!(mol)
+    expected_atomtypes = ["ss", "ss", "ss", "o", "oh", "o", "o", "os", "o", "o", "nj", "n", "na", "n2", "nc", "n", "nc", "nh", "cy", "cy", "c", "ce", "c2", "c3", "c3", "c", "c", "ce", "cd", "cc", "cd", "c3", "c", "c", "cd", "c3", "h2", "h1", "h1", "h1", "hn", "h1", "h1", "ho", "h4", "hn", "h1", "h1", "h1", "h1", "h1", "h1", "hn", "hn"]
+    for atmNum in 1:lastindex(expected_atomtypes)
+        @test mol.atoms.atomtype[atmNum] == expected_atomtypes[atmNum]
+    end
 end
