@@ -80,8 +80,8 @@ function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
         return false 
     elseif isempty(allPossiblePaths)
         return false
-    elseif length(countmap(allPossiblePaths, alg=:dict)) != number_of_ces_paths(CES_df)
-        # if two paths are the same and should be different, but also not same length of the searched paths
+    elseif length(countmap(allPossiblePaths, alg=:dict)) < number_of_ces_paths(CES_df)
+        # if two paths are the same but should be different, but also smaller than length of the searched paths
         return false
     end
     return true
@@ -89,7 +89,7 @@ end
 
 
 function number_of_ces_paths(CES_df::DataFrame)
-    return lastindex(filter(x -> isempty(x), CES_df.ContainsAtomId))
+    return count(x -> isempty(x), CES_df.ContainsAtomId)
 end
 
 
@@ -109,31 +109,27 @@ function path_builder(CES_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPat
                             "XD" => [Elements.S, Elements.P])
 
     filtered_atm_paths = Vector{Vector{Int}}()
-    
-    # create an expression that evaluates by elements and number of neighbors if demanded
-    check_expr = Expr(:&&)
+
+    check_Bool = false
 
     # Element properties check
     if in(cesRow.Element[1], keys(XX_XA_XB_XD_dict))
-        push!(check_expr.args, in(mol.atoms.element[curr_atom], XX_XA_XB_XD_dict[cesRow.Element[1]]))
+        check_Bool = in(mol.atoms.element[curr_atom], XX_XA_XB_XD_dict[cesRow.Element[1]])
     elseif !isempty(cesRow.Element) 
-        push!(check_expr.args, (cesRow.Element[1] == enumToString(mol.atoms.element[curr_atom])))
+        check_Bool = cesRow.Element[1] == enumToString(mol.atoms.element[curr_atom])
     end
-    
-    # check number of neigbors
-    if !isempty(cesRow.NumNeighbors[1])
-        push!(check_expr.args, cesRow.NumNeighbors[1] == lastindex(neighbors(mol_graph, curr_atom)))
-    end
-    
-    # check CES_APS against that of current atom
-    if lastindex(atmPath_vec) > 1
-        push!(check_expr.args, CES_APS_processor(cesRow.CES_APS[1], curr_atom, previous_atom, mol))
-    end
-    
-    # evaluate the built expression to a boolean
-    check_Bool = eval(check_expr)
 
-    # return if last there are no following links in CES
+    # Number of neighbors property check
+    if !isempty(cesRow.NumNeighbors[1]) && check_Bool
+        check_Bool = cesRow.NumNeighbors[1] == lastindex(neighbors(mol_graph, curr_atom))
+    end
+
+    # check the atomic property string (APS) of the chemical environment string (CES)
+    if lastindex(atmPath_vec) > 1 && check_Bool
+        check_Bool = CES_APS_processor(cesRow.CES_APS[1], curr_atom, previous_atom, mol)
+    end
+
+    # return if there are no following links in CES
     if isempty(cesRow.ContainsAtomId[1]) && check_Bool
         push!(filtered_atm_paths, atmPath_vec)
         return filtered_atm_paths
@@ -171,28 +167,28 @@ function CES_APS_processor(colstring::String, curr_atom::Int64, pre_atom::Int64,
     atmprops_df = mol.properties["atmprops_df"]
 
     and_list = split(colstring, ',')
-    and_expr_conditionals = Expr(:&&)
+    and_Bool = true
 
     if !all(in(atmprops_df[curr_atom,:BondTypes]).(and_list))
         for andItem in and_list
             or_list = split(andItem, '.')
-            or_expr_conditionals = Expr(:||)
+            or_Bool = false
             for orItem in or_list
                 if contains(orItem, '\'')
-                    push!(or_expr_conditionals.args, bond_symbol_string == chop(orItem),
-                    uppercase(bond_symbol_string) == chop(orItem))
+                    or_Bool = (bond_symbol_string == chop(orItem) || uppercase(bond_symbol_string) == chop(orItem))
                 else
-                    push!(or_expr_conditionals.args, in(atmprops_df[curr_atom,:BondTypes]).(orItem))
+                    or_Bool = in(atmprops_df[curr_atom,:BondTypes]).(orItem)
+                end
+                if or_Bool == true
+                    break
                 end
             end
-            if eval(or_expr_conditionals) == false
+            if or_Bool == false
                 return false
-            else
-                push!(and_expr_conditionals.args, eval(or_expr_conditionals)) 
             end
         end
     else
         return true
     end
-    return eval(and_expr_conditionals)
+    return and_Bool
 end
