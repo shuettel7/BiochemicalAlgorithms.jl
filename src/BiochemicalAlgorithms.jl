@@ -25,7 +25,7 @@ include("validation/atomtypes_dict_script.jl")
 module PubChem
 include("fileformats/pubchem_json.jl")
 end
-include("fileformats/PDB.jl")
+include("fileformats/pdb.jl")
 include("fileformats/mol2.jl")
 
 include("mappings/atom_bijection.jl")
