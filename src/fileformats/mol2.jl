@@ -23,11 +23,17 @@ function load_mol2(fname::AbstractString, T = Float32)
         end
         if section == "@<TRIPOS>MOLECULE"
             section_line += 1
+            if isempty(line)
+                continue
+            end
             if section_line == 1
                 new_mol.name == string(line)
             end
         elseif section == "@<TRIPOS>ATOM"
             section_line += 1
+            if isempty(line)
+                continue
+            end
             line_elements = split(line)
             new_atom = (number = parse(Int64, line_elements[1]), 
                         name = line_elements[2], 
@@ -40,6 +46,9 @@ function load_mol2(fname::AbstractString, T = Float32)
             push!(new_mol.atoms, new_atom)
         elseif section == "@<TRIPOS>BOND"
             section_line += 1
+            if isempty(line)
+                continue
+            end
             line_elements = split(line)
             order_ = BondOrderType(mol2_get_BondOrder(line_elements[4]))
             properties_dict = Dict{String, Union{T, String}}()
@@ -62,7 +71,13 @@ function export_mol2(mol::Molecule, filelocation::String)
     # For validation of small molecules only: no <TRIPOS>SUBSTRUCTURES export implemented
     mol_name = (!isnothing(findlast('.', mol.name)) && in(findlast('.', mol.name), [lastindex(mol.name)-5:lastindex(mol.name);])) ? basename(mol.name[1:findlast('.', mol.name)-1]) : basename(mol.name)
     export_file = open(string(filelocation, mol_name, ".mol2") , "w")
-    
+
+    # assign the SYBYL atomtypes if no others are assigned
+    if all(in("", mol.atoms.atomtype))
+        PreprocessingMolecule!(mol)
+        get_molecule_atomtypes!(mol, "data/antechamber/ATOMTYPE_SYBYL.DEF")
+    end
+
     ### Molecule section
     write(export_file, "@<TRIPOS>MOLECULE\n")
     
