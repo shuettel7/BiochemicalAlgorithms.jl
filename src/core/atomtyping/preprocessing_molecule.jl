@@ -13,7 +13,7 @@ function PreprocessingMolecule!(mol::Molecule)
 
     # Cycle detection and Vectors
     # Antechamber only uses rings of size 3-9, anything larger is non-ring (NG in paper, NR here)
-    mol.properties["chem_cycle_array"] = chem_cycle_array = filter(x -> lastindex(x) <= 9, cycle_basis(mol_graph))
+    mol.properties["chem_cycle_array"] = chem_cycle_array = get_cycles_of_size_3_to_9(mol)
     mol.properties["atom_aromaticity_array"] = atom_aromaticity_array = atom_aromaticity_type_processor(chem_cycle_array, mol)
     mol.properties["atom_conjugated_system_array"] = atom_conjugated_system_processor(chem_cycle_array, mol)
 
@@ -60,6 +60,19 @@ function PreprocessingMolecule!(mol::Molecule)
     end
 
     push!(mol.properties, "atmprops_df" => create_atom_preprocessing_df!(mol))
+end
+
+
+function get_cycles_of_size_3_to_9(mol::Molecule)
+    mol_graph = mol.properties["mol_graph"]
+    max_cycles = Vector{Vector{Int}}(filter(x -> lastindex(x) <= 9, cycle_basis(mol_graph)))
+    for atmNum in mol.atoms.number
+        potential_new_max_cycles = filter(x -> lastindex(x) <= 9, cycle_basis(mol_graph, atmNum))
+        if lastindex(potential_new_max_cycles) > lastindex(max_cycles)
+            max_cycles = potential_new_max_cycles
+        end
+    end
+    return max_cycles
 end
 
 
@@ -186,7 +199,7 @@ function amide_processor(mol::Molecule, mol_graph::Graph, ElementWNeighbourCount
     for nitrogen in nitrogen_atoms_array
         for amide_neigh in neighbors(mol_graph, nitrogen)
             if lastindex(neighbors(mol_graph, amide_neigh)) > 2 && 
-                in("O1", ElementWNeighbourCount_vector[neighbors(mol_graph, amide_neigh)])
+                    in("O1", ElementWNeighbourCount_vector[neighbors(mol_graph, amide_neigh)])
                 push!(amide_bond_vector, (amide_neigh,nitrogen))
             end
         end
@@ -249,13 +262,52 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
             atom_ring_class_array[i] = ["NR"]
         end
     end
-    for vertices_vec in allCycles_vec
+    
+    # type the obvious AR1 rings first
+    AR1_rings_vec = Vector{Int}()
+    
+    for (ringNum, vertices_vec) in enumerate(allCycles_vec)
+        ring_size = lastindex(vertices_vec)
+        # check for double bonds to a non-ring atoms from the ring atoms
+        double_bond_to_non_ring_atom = mol.bonds[(((in(vertices_vec).(mol.bonds.a1) .&& .!in(reduced_vec).(mol.bonds.a2) .|| 
+                                                in(vertices_vec).(mol.bonds.a2)) .&& .!in(reduced_vec).(mol.bonds.a1)) .&&
+                                                mol.bonds.order .== BondOrder.T(2)), :]
+
+        if !isempty(double_bond_to_non_ring_atom)
+            ring_not_conjugated_atoms = DataFrame("number" => filter(x -> in(x, vertices_vec), vcat(double_bond_to_non_ring_atom.a1, double_bond_to_non_ring_atom.a2)))
+            @with innerjoin(ring_not_conjugated_atoms, mol.atoms, on = [:number]) begin
+                push!.(:properties, "ring_non_conjugated_atom" => true)
+            end
+        end
+
+        # check number of pi electrons
+        subVector = copy(vertices_vec)
+        shifted_subVector = vcat(subVector[2:lastindex(subVector)], subVector[1])
+        ring_bonds_df = innerjoin(DataFrame(:a1 => [subVector; shifted_subVector], :a2 => [shifted_subVector; subVector]), mol.bonds, on = [:a1, :a2])
+        ring_bonds_with_order_2_or_tripos_ar_tag_df = filter(x -> x.order == BondOrder.T(2) || 
+                                (haskey(x.properties,"TRIPOS_tag") && x.properties["TRIPOS_tag"] == "ar"), ring_bonds_df)
+        pi_electrons = nrow(ring_bonds_with_order_2_or_tripos_ar_tag_df) * 2
+        if (pi_electrons / ring_size) == 1.0 && isempty(double_bond_to_non_ring_atom)
+            assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
+            @with innerjoin(ring_bonds_df[!,[:a1,:a2]], mol.bonds, on = [:a1, :a2]) begin
+                push!.(:properties, "TRIPOS_tag" => "ar")
+            end
+            push!(AR1_rings_vec, ringNum)
+        end
+    end
+    
+    # then type the other rings excluding the AR1 rings, but may be dependent on
+    allCycles_vec_no_AR1 = copy(allCycles_vec)
+    allCycles_vec_no_AR1 = deleteat!(allCycles_vec_no_AR1, AR1_rings_vec) 
+    for vertices_vec in allCycles_vec_no_AR1
+        ring_size = lastindex(vertices_vec)
 
         # check if is O, N, or S present in Ring vertex Vector
         ONSP_present = true in in(mol.atoms.element[vertices_vec]).([Elements.O,Elements.N,Elements.S,Elements.P])
 
-        double_bond_to_non_ring_atom = mol.bonds[((in(vertices_vec).(mol.bonds.a1) .|| in(vertices_vec).(mol.bonds.a2)) .&&
-                                                (.!in(reduced_vec).(mol.bonds.a1) .|| .!in(reduced_vec).(mol.bonds.a2)) .&&
+        # check for double bonds to a non-ring atoms from the ring atoms
+        double_bond_to_non_ring_atom = mol.bonds[(((in(vertices_vec).(mol.bonds.a1) .&& .!in(reduced_vec).(mol.bonds.a2) .|| 
+                                                in(vertices_vec).(mol.bonds.a2)) .&& .!in(reduced_vec).(mol.bonds.a1)) .&&
                                                 mol.bonds.order .== BondOrder.T(2)), :]
         
         if !isempty(double_bond_to_non_ring_atom)
@@ -269,42 +321,45 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
         subVector = copy(vertices_vec)
         shifted_subVector = vcat(subVector[2:lastindex(subVector)], subVector[1])
         ring_bonds_df = innerjoin(DataFrame(:a1 => [subVector; shifted_subVector], :a2 => [shifted_subVector; subVector]), mol.bonds, on = [:a1, :a2])
-        ring_bonds_with_tripos_ar_tag_df = filter(:properties => x -> haskey(x,"TRIPOS_tag") && x["TRIPOS_tag"] == "ar", ring_bonds_df)
-        ring_bonds_order_2 = haskey(countmap(ring_bonds_df.order, alg=:dict), BondOrder.T(2)) ? countmap(ring_bonds_df.order, alg=:dict)[BondOrder.T(2)] : 0
-        pi_electrons = (ring_bonds_order_2 > 0 || nrow(ring_bonds_with_tripos_ar_tag_df) > 0) ? (ring_bonds_order_2 + nrow(ring_bonds_with_tripos_ar_tag_df)) * 2 : 0
-        if (pi_electrons / lastindex(vertices_vec)) == 1.0
-            assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / lastindex(vertices_vec)) == 0
-            assign_all_in_vertices_vec_aromaticity_type("AR5", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) < 1 && 
-                lastindex(vertices_vec) > 5 && isempty(double_bond_to_non_ring_atom)
-            # check if Ring vertices_vec has intersections with other rings in molecule and if these are aromatic
-            intersecting_atoms = filter(y -> in(y, vertices_vec), keys(countmap(filter(x -> countmap(reduced_vec)[x] > 1, reduced_vec), alg=:dict)))
-            potentially_aromatic_intersecting_atoms = filter(x -> lastindex(filter(y -> y in intersecting_atoms, neighbors(mol_graph, x))) > 0, intersecting_atoms)
+        ring_bonds_with_order_2_or_tripos_ar_tag_df = filter(x -> x.order == BondOrder.T(2) || 
+                                    (haskey(x.properties,"TRIPOS_tag") && x.properties["TRIPOS_tag"] == "ar"), ring_bonds_df)
+        pi_electrons = nrow(ring_bonds_with_order_2_or_tripos_ar_tag_df) * 2
 
-            check_num_aromatic_bonds = Vector{Int}()
-            for potArInterAtm in potentially_aromatic_intersecting_atoms
-                aromatic_intersection_bonds = mol.bonds[((mol.bonds.a1 .== potArInterAtm .|| mol.bonds.a2 .== potArInterAtm) .&&
-                                                (in(filter(x -> in(neighbors(mol_graph, potArInterAtm)).(x), reduced_vec)).(mol.bonds.a1) .|| 
-                                                in(filter(x -> in(neighbors(mol_graph, potArInterAtm)).(x), reduced_vec)).(mol.bonds.a2))),:order]
-                ar_intersection_bonds_dict = countmap(aromatic_intersection_bonds, alg=:dict)
-                push!(check_num_aromatic_bonds, haskey(ar_intersection_bonds_dict, BondOrder.T(2)) 
-                                                ? ar_intersection_bonds_dict[BondOrder.T(2)]
-                                                : 0)
+        # AR2 property: has two continuous single bonds
+        continuous_single_bonds_num = number_of_continuous_single_bonds_in_ring(vertices_vec, ring_bonds_df)
+
+        # conditional cascade for different aromatic types: AR1-5
+        if (pi_electrons / lastindex(vertices_vec)) == 1.0 && isempty(double_bond_to_non_ring_atom)
+            assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
+            @with innerjoin(ring_bonds_df[!,[:a1,:a2]], mol.bonds, on = [:a1, :a2]) begin
+                push!.(:properties, "TRIPOS_tag" => "ar")
             end
-            if !isempty(check_num_aromatic_bonds) && all(in([1]).(check_num_aromatic_bonds))
-                assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
-            end
-        elseif (pi_electrons / lastindex(vertices_vec)) > 1/2 && (pi_electrons / lastindex(vertices_vec)) <= 1 && 
-                ONSP_present && lastindex(vertices_vec) > 4 && isempty(double_bond_to_non_ring_atom)
+        elseif (pi_electrons / ring_size) == 0
+            assign_all_in_vertices_vec_aromaticity_type("AR5", vertices_vec, reduced_vec, atom_ring_class_array)
+        elseif (pi_electrons / ring_size) >= 1/2 && ONSP_present && ring_size > 4 &&
+                isempty(double_bond_to_non_ring_atom) && (continuous_single_bonds_num / ring_size) <= 2/6
             assign_all_in_vertices_vec_aromaticity_type("AR2", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / lastindex(vertices_vec)) != 0 && !isempty(double_bond_to_non_ring_atom) 
+        elseif (pi_electrons / ring_size) > 1/2 && !isempty(double_bond_to_non_ring_atom)
             assign_all_in_vertices_vec_aromaticity_type("AR3", vertices_vec, reduced_vec, atom_ring_class_array)
         else
             assign_all_in_vertices_vec_aromaticity_type("AR4", vertices_vec, reduced_vec, atom_ring_class_array)
         end
     end
     return atom_ring_class_array
+end
+
+
+function number_of_continuous_single_bonds_in_ring(vertices_vec::Vector{Int}, ring_bonds_df::DataFrame)
+    counter = 0
+    for vert in vertices_vec
+        num_single_bonds_at_vertex = ring_bonds_df[((ring_bonds_df.a1 .== vert .|| ring_bonds_df.a2 .== vert) .&& 
+                                    ring_bonds_df.order .== BondOrder.T(1)), :]
+        filter!(x -> !(haskey(x.properties, "TRIPOS_tag") && x.properties["TRIPOS_tag"] == "ar"), num_single_bonds_at_vertex)
+        if num_single_bonds_at_vertex == 2
+            counter += 1
+        end
+    end
+    return counter
 end
 
 
