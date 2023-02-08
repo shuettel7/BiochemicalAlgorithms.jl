@@ -115,13 +115,13 @@ function path_builder(CES_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPat
     # Element properties check
     if in(cesRow.Element[1], keys(XX_XA_XB_XD_dict))
         check_Bool = in(mol.atoms.element[curr_atom], XX_XA_XB_XD_dict[cesRow.Element[1]])
-    elseif !isempty(cesRow.Element) 
+    elseif !isempty(cesRow.Element)
         check_Bool = cesRow.Element[1] == enumToString(mol.atoms.element[curr_atom])
     end
 
     # Number of neighbors property check
     if !isempty(cesRow.NumNeighbors[1]) && check_Bool
-        check_Bool = cesRow.NumNeighbors[1] == lastindex(neighbors(mol_graph, curr_atom))
+        check_Bool = (cesRow.NumNeighbors[1] == lastindex(neighbors(mol_graph, curr_atom)))
     end
 
     # check the atomic property string (APS) of the chemical environment string (CES)
@@ -177,7 +177,7 @@ function CES_APS_processor(colstring::String, curr_atom::Int64, pre_atom::Int64,
                 if contains(orItem, '\'')
                     or_Bool = (bond_symbol_string == chop(orItem) || uppercase(bond_symbol_string) == chop(orItem))
                 else
-                    or_Bool = in(atmprops_df[curr_atom,:BondTypes]).(orItem)
+                    or_Bool = (in(orItem, atmprops_df[curr_atom,:BondTypes]) || in(lowercase(orItem), atmprops_df[curr_atom,:BondTypes]))
                 end
                 if or_Bool == true
                     break
