@@ -51,7 +51,6 @@ end
         end
 end
 
-
 @testset "mol2_import" begin
         mol = load_mol2("data/Import_test_sustiva_modified.mol2")
         
