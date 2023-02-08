@@ -15,7 +15,19 @@ function PreprocessingMolecule!(mol::Molecule)
     # Antechamber only uses rings of size 3-9, anything larger is non-ring (NG in paper, NR here)
     mol.properties["chem_cycle_array"] = chem_cycle_array = get_cycles_of_size_3_to_9(mol)
     mol.properties["atom_aromaticity_array"] = atom_aromaticity_array = atom_aromaticity_type_processor(chem_cycle_array, mol)
-    mol.properties["atom_conjugated_system_array"] = atom_conjugated_system_processor(chem_cycle_array, mol)
+            
+    ### add amide TRIPOS_tag to amide bonds
+    amide_array = amide_processor(mol)
+    if !isempty(amide_array)
+        amide_bonded_atoms_df = DataFrame(NamedTuple{(:a1, :a2)}.(amide_array))
+        append!(amide_bonded_atoms_df, NamedTuple{(:a2, :a1)}.(amide_array))
+        @with innerjoin(amide_bonded_atoms_df, mol.bonds, on = [:a1, :a2]) begin
+            push!.(:properties, "TRIPOS_tag" => "am")
+        end
+    end
+
+    # find conjugated systems in molecule
+    mol.properties["atom_conjugated_system_array"] = atom_conjugated_system_processor(mol)
 
     ### Assign Cycle/Ring properties to Atoms and Bonds
     for (j, subvec) in enumerate(chem_cycle_array)
@@ -47,17 +59,7 @@ function PreprocessingMolecule!(mol::Molecule)
                         "Neighbors" => neighbors(mol_graph, :number), 
                         "AromaticityType" => mol.properties["atom_aromaticity_array"][:number],
                         "num_EWG_groups" => Int(:element) == 1 ? count_EWG(:number, mol) : -1,
-                        "BondTypes" => bondShortOrder_types(:number, mol, mol_graph, wgraph_adj_matrix))        
-    
-    ### add amide TRIPOS_tag to amide bonds
-    amide_array = amide_processor(mol, mol_graph, ElemWNeighbourCount_vector)
-    if !isempty(amide_array)
-        amide_bonded_atoms_df = DataFrame(NamedTuple{(:a1, :a2)}.(amide_array))
-        append!(amide_bonded_atoms_df, NamedTuple{(:a2, :a1)}.(amide_array))
-        @with innerjoin(amide_bonded_atoms_df, mol.bonds, on = [:a1, :a2]) begin
-            push!.(:properties, "TRIPOS_tag" => "am")
-        end
-    end
+                        "BondTypes" => bondShortOrder_types(:number, mol, mol_graph, wgraph_adj_matrix))
 
     push!(mol.properties, "atmprops_df" => create_atom_preprocessing_df!(mol))
 end
@@ -113,11 +115,10 @@ function count_EWG(num::Int64, mol::Molecule)
 end
 
 
-function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, mol::Molecule)
+function atom_conjugated_system_processor(mol::Molecule)
     mol_graph = mol.properties["mol_graph"]
     aromaticity_array = mol.properties["atom_aromaticity_array"]
     bond_matrix = mol.properties["weighted_graph_adj_matrix"]
-    all_cycle_atoms = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     conjugated_atoms_vec = Vector{Int}()
     
     filtered_bonds_df = mol.bonds[(in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a1]) .&&
@@ -133,6 +134,10 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
             continue
         end
 
+        # outgoing bonds from atmNum atom
+        atmNum_bonds = mol.bonds[(mol.bonds.a1 .== atmNum .|| mol.bonds.a2 .== atmNum), :]
+        amide_bond = filter(x -> haskey(x.properties, "TRIPOS_tag") && x.properties["TRIPOS_tag"] == "am", atmNum_bonds)
+
         # oxygen neighbors
         oxygen_neighbors = filter(x -> mol.atoms.element[x] == Elements.O, neighbors(mol_graph, atmNum))
         oxygen_bonds = innerjoin(DataFrame(:a1 => vcat(repeat([atmNum], lastindex(oxygen_neighbors)), oxygen_neighbors), 
@@ -146,17 +151,17 @@ function atom_conjugated_system_processor(allCycles_vec::Vector{Vector{Int64}}, 
                                                         oxygen_bonds[(oxygen_bonds.order .== BondOrder.T(2)),:a2]), alg=:dict)))
         elseif (in(mol.atoms.element[atmNum], [Elements.N, Elements.S, Elements.P]) &&
                 (haskey(oxygen_bond_order_dict, BondOrder.T(2)) && oxygen_bond_order_dict[BondOrder.T(2)] == 1 || !haskey(oxygen_bond_order_dict, BondOrder.T(2)))) ||
-                mol.atoms.element[atmNum] == Elements.C && !haskey(oxygen_bond_order_dict, BondOrder.T(2))
+                mol.atoms.element[atmNum] == Elements.C && (!haskey(oxygen_bond_order_dict, BondOrder.T(2)) || !isempty(amide_bond))
             direct_bonds_countmap = countmap(bond_matrix[atmNum, neighbors(mol_graph, atmNum)], alg=:dict)
             if ((haskey(direct_bonds_countmap, 2.0) && direct_bonds_countmap[2.0] >= 1) ||
-                (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1))
-                for neigh in filter(x -> !(true in in(aromaticity_array[x]).(["AR1","AR2"])), neighbors(mol_graph, atmNum))
+                (haskey(direct_bonds_countmap, 3.0) && direct_bonds_countmap[3.0] >= 1)) || !isempty(amide_bond)
+                for neigh in neighbors(mol_graph, atmNum)
                     neighbors_bonds_countmap = countmap(bond_matrix[neigh, 
                                                             filter(x -> !in(x, neighborhood(mol_graph, atmNum, 1)), neighbors(mol_graph, neigh))], alg=:dict)
                     if !isempty(neighbors_bonds_countmap) && 
                             in(mol.atoms.element[neigh], [Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]) &&
                             ((haskey(neighbors_bonds_countmap, 2.0) && neighbors_bonds_countmap[2.0] >= 1) ||
-                            (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1))
+                            (haskey(neighbors_bonds_countmap, 3.0) && neighbors_bonds_countmap[3.0] >= 1)|| !isempty(amide_bond))
                         push!(conjugated_atoms_vec, atmNum)
                     end
                 end
@@ -173,7 +178,7 @@ function bondShortOrder_types(num::Int64, mol::Molecule, mol_graph::Graph, wgrap
     for i in keys(bonds_dict)
         curr_bond_str = enumToString(BondShortOrderType(Int(i)))
         if !in("NR", mol.properties["atom_aromaticity_array"][num]) && !haskey(mol.atoms[num, :properties], "ring_non_conjugated_atom") &&
-            !in("AR5", mol.properties["atom_aromaticity_array"][num]) || in(num, mol.properties["atom_conjugated_system_array"])
+            true in in(mol.properties["atom_aromaticity_array"][num]).(["AR1", "AR2", "AR3"]) || in(num, mol.properties["atom_conjugated_system_array"])
             push!(BondShortVec, curr_bond_str, string(bonds_dict[i], curr_bond_str))
         else
             push!(BondShortVec, uppercase(curr_bond_str), string(bonds_dict[i], uppercase(curr_bond_str)))
@@ -193,13 +198,14 @@ function bondShortOrder_types(num::Int64, mol::Molecule, mol_graph::Graph, wgrap
 end
 
 
-function amide_processor(mol::Molecule, mol_graph::Graph, ElementWNeighbourCount_vector::Vector{String})
+function amide_processor(mol::Molecule)
+    mol_graph = mol.properties["mol_graph"]
     amide_bond_vector = Vector{Tuple{Int64, Int64}}()
     nitrogen_atoms_array = mol.atoms[(mol.atoms[!, :element] .== Elements.N .&& in("NG", mol.properties["atom_aromaticity_array"][mol.atoms.number])), :number]
     for nitrogen in nitrogen_atoms_array
         for amide_neigh in neighbors(mol_graph, nitrogen)
             if lastindex(neighbors(mol_graph, amide_neigh)) > 2 && 
-                    in("O1", ElementWNeighbourCount_vector[neighbors(mol_graph, amide_neigh)])
+                !isempty(filter(x -> x.element == Elements.O && lastindex(neighbors(mol_graph, amide_neigh)) == 1, mol.atoms))
                 push!(amide_bond_vector, (amide_neigh,nitrogen))
             end
         end
@@ -305,11 +311,11 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
         # check if is O, N, or S present in Ring vertex Vector
         ONSP_present = true in in(mol.atoms.element[vertices_vec]).([Elements.O,Elements.N,Elements.S,Elements.P])
 
-        # check for double bonds to a non-ring atoms from the ring atoms
+        # AR3 property, check for double bonds to a non-ring atoms from the ring atoms
         double_bond_to_non_ring_atom = mol.bonds[(((in(vertices_vec).(mol.bonds.a1) .&& .!in(reduced_vec).(mol.bonds.a2) .|| 
                                                 in(vertices_vec).(mol.bonds.a2)) .&& .!in(reduced_vec).(mol.bonds.a1)) .&&
                                                 mol.bonds.order .== BondOrder.T(2)), :]
-        
+
         if !isempty(double_bond_to_non_ring_atom)
             ring_not_conjugated_atoms = DataFrame("number" => filter(x -> in(x, vertices_vec), vcat(double_bond_to_non_ring_atom.a1, double_bond_to_non_ring_atom.a2)))
             @with innerjoin(ring_not_conjugated_atoms, mol.atoms, on = [:number]) begin
@@ -339,7 +345,7 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
         elseif (pi_electrons / ring_size) >= 1/2 && ONSP_present && ring_size > 4 &&
                 isempty(double_bond_to_non_ring_atom) && (continuous_single_bonds_num / ring_size) <= 2/6
             assign_all_in_vertices_vec_aromaticity_type("AR2", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / ring_size) > 1/2 && !isempty(double_bond_to_non_ring_atom)
+        elseif (pi_electrons / ring_size) > 0 && !isempty(double_bond_to_non_ring_atom)
             assign_all_in_vertices_vec_aromaticity_type("AR3", vertices_vec, reduced_vec, atom_ring_class_array)
         else
             assign_all_in_vertices_vec_aromaticity_type("AR4", vertices_vec, reduced_vec, atom_ring_class_array)
