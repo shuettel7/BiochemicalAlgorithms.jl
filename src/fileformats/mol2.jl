@@ -67,7 +67,7 @@ function load_mol2(fname::AbstractString, T = Float32)
 end
 
 
-function export_mol2(mol::Molecule, filelocation::String)
+function export_mol2(mol::Molecule, filelocation::String, default_atomtyping_df="../data/antechamber/ATOMTYPE_SYBYL.DEF")
     # For validation of small molecules only: no <TRIPOS>SUBSTRUCTURES export implemented
     mol_name = (!isnothing(findlast('.', mol.name)) && in(findlast('.', mol.name), [lastindex(mol.name)-5:lastindex(mol.name);])) ? basename(mol.name[1:findlast('.', mol.name)-1]) : basename(mol.name)
     export_file = open(string(filelocation, mol_name, ".mol2") , "w")
@@ -75,7 +75,7 @@ function export_mol2(mol::Molecule, filelocation::String)
     # assign the SYBYL atomtypes if no others are assigned
     if all(in("", mol.atoms.atomtype))
         PreprocessingMolecule!(mol)
-        get_molecule_atomtypes!(mol, "data/antechamber/ATOMTYPE_SYBYL.DEF")
+        get_molecule_atomtypes!(mol, default_atomtyping_df)
     end
 
     ### Molecule section
