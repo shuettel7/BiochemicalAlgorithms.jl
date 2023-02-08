@@ -1,6 +1,7 @@
 *.jl.*.cov
 *.jl.cov
 *.jl.mem
+
 /.vscode/
 /docs/build/
 Manifest.toml
@@ -64,3 +65,11 @@ src/validation/ball_atomtyping_validation/build/CMakeFiles/TargetDirectories.txt
 src/validation/ball_atomtyping_validation/build/Makefile
 
 test/data/3mea.pdb
+
+# Antechamber peripheral files
+*.AC
+*.AC0
+*.INF
+
+# BALLC++ script peripheral files
+src/validation/ball_atomtyping_validation/.idea/
