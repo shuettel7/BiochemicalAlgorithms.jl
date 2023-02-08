@@ -2,14 +2,14 @@
 @testset "Preprocessing_Molecule" begin
     for mol in load_pubchem_json("data/TEST_PREPROCESSING_MOLECULE_Efavirenz_Conformer3D_CID_64139.json")
         PreprocessingMolecule!(mol)
-        @test length(mol.properties) == 12
+        @test length(mol.properties) == 11
         @test length(mol.atoms.properties) == count_atoms(mol)
         @test length(mol.bonds.properties) == count_bonds(mol)
         @test length(mol.atoms.properties[20]) == 7
         @test lastindex(mol.atoms.properties[13]["CycleVectorNum"]) == 2
         @test mol.atoms.properties[20]["Neighbors"] == [1, 17, 21]
         @test all(in([0]).(mol.properties["atmprops_df"][22:30,:num_EWG_groups]))
-        @test mol.bonds.properties[9]["TRIPOS_tag"] == "am"
+        @test !haskey(mol.bonds[9, :properties], "TRIPOS_tag") # according to antechamber this is not an amide bond, so no tag
         @test mol.bonds.properties[31]["TRIPOS_tag"] == "ar"
     end
 end

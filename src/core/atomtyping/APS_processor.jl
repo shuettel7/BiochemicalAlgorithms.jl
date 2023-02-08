@@ -7,26 +7,26 @@ function APS_processor(colstring::String, atmprops_df::DataFrameRow)
     if colstring[1] == '[' && colstring[lastindex(colstring)] == ']'
         colstring = colstring[2:lastindex(colstring)-1]
     end
-    and_count = count(==(','), colstring)
-    or_count = count(==('.'), colstring)
+    
     and_list = split(colstring, ',')
-    and_expr_conditionals = Expr(:&&)
+    and_Bool = true
 
     if !all(in(atmprops_df.BondTypes).(and_list))
         for andItem in and_list
             or_list = split(andItem, '.')
-            or_expr_conditionals = Expr(:||)
+            or_Bool = false
             for orItem in or_list
-                push!(or_expr_conditionals.args, :(in($(atmprops_df.BondTypes)).($orItem)))
+                or_Bool = in(atmprops_df.BondTypes).(orItem)
+                if or_Bool == true
+                    break
+                end
             end
-            if eval(or_expr_conditionals) == false
+            if or_Bool == false
                 return false
-            else
-                push!(and_expr_conditionals.args, eval(or_expr_conditionals)) 
             end
         end
     else
         return true
     end
-    return eval(and_expr_conditionals)
+    return and_Bool
 end
