@@ -1,7 +1,7 @@
 using BiochemicalAlgorithms, DataFrames
 
 export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl, load_multiCompound_pubchem_json_and_export_to_mol2, 
-    export_all_from_directory_with_gaff, export_all_from_directory, atomtype_comparison
+    export_all_from_directory_with_gaff, export_all_from_directory, atomtype_comparison, count_assigned_properties, count_assigned_property_fields
 
 
 function export_all_from_directory_with_gaff(directory::String, toDirectory::String)
@@ -86,4 +86,27 @@ function atomtype_comparison(mol1::Molecule, mol2::Molecule)
     #     println("atmNum: ", atmNum, "  ", basename(mol1.name), " atomtype: ", mol1.atoms.atomtype[atmNum], "  ; ", basename(mol2.name), " atomtype: ", mol2.atoms.atomtype[atmNum])
     # end
     return result_list
+end
+
+
+function count_assigned_properties(def_df::DataFrame)
+    counter = 0
+    for col in eachcol(def_df)[2:end-2]
+        counter += count(x -> x != nothing, col)
+    end
+    for col in eachcol(def_df)[end-1:end]
+        for colrow in filter(x -> x != nothing, col)
+            counter += count(x -> x in ['[','(','.', ','], colrow)
+        end
+    end
+    return counter
+end
+
+
+function count_assigned_property_fields(def_df::DataFrame)
+    counter = 0
+    for col in eachcol(def_df)[2:end]
+        counter += count(x -> x != nothing, col)
+    end
+    return counter
 end

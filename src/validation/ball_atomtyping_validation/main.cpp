@@ -66,16 +66,17 @@ int main() {	//int argc, char** argv
 		Options options;
 		options[GAFFTypeProcessor::Option::ATOMTYPE_FILENAME] = "atomtyping/GAFFTypes.dat";
 
+		AssignBondOrderProcessor abp;
+		S.apply(abp);
+
 		GAFFTypeProcessor gt(options);
 		S.apply(gt);
 
 		for (AtomIterator at_it = S.beginAtom(); +at_it; ++at_it)
 			std::cout << "atom name: " << at_it->getName() << " atomtype  " << at_it->getProperty("atomtype").getString() << std::endl;
 
-		AssignBondOrderProcessor abp;
-		S.apply(abp);
 
-		std::cout << "System contains " << S.countAtoms() << " atoms." << std::endl;
+		// std::cout << "System contains " << S.countAtoms() << " atoms." << std::endl;
 		
 		GenericMolFile* outfile = MolFileFactory::open(outfile_name, std::ios::out);
 		*outfile << S;
