@@ -82,9 +82,9 @@ function atomtype_comparison(mol1::Molecule, mol2::Molecule)
     if isempty(result_list)
         return [true]
     end
-    # for atmNum in result_list 
-    #     println("atmNum: ", atmNum, "  ", basename(mol1.name), " atomtype: ", mol1.atoms.atomtype[atmNum], "  ; ", basename(mol2.name), " atomtype: ", mol2.atoms.atomtype[atmNum])
-    # end
+    for atmNum in result_list 
+        println(basename(mol1.name), "   atmNum: ", atmNum, "  ", " ball atomtype: ", mol1.atoms.atomtype[atmNum], "  ; ", " julia atomtype: ", mol2.atoms.atomtype[atmNum])
+    end
     return result_list
 end
 

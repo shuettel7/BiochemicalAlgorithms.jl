@@ -88,9 +88,8 @@ function count_EWG(num::Int64, mol::Molecule)
     # Electron withdrawal Atoms (EWG) according to antechamber document are: N, O, F, Cl, and Br
     # which are bound to the immediate neighbour
     # To Do: Test differences for Atom Typing, see below typical know EWG
-    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1", "O2", "S2", "S3", "S4", "N2", "N3"]
-    possible_indirect_pullers = ["S3", "S4", "N3"]
-    acceptable_first_neighbors = ["C2", "C3", "C4", "S3", "S4", "N3", "P3", "P4", "O2", "S2"]
+    strong_pullers = ["Cl1", "F1", "Br1", "O1", "S1", "O2", "S2", "S3", "S4", "N2", "N3"]
+    acceptable_first_neighbors = ["C2", "C3", "C4", "S2", "S3", "S4", "N3", "P3", "P4", "O2"]
     elec_pullers_num = 0
     mol_graph = mol.properties["mol_graph"]
     direct_neighbor = getStringElementWithNeighborCount(neighbors(mol_graph, num)[1], mol)
@@ -99,15 +98,6 @@ function count_EWG(num::Int64, mol::Molecule)
         for secNeigh in secondary_neighbors
             if getStringElementWithNeighborCount(secNeigh, mol) in strong_pullers
                 elec_pullers_num += 1
-            elseif getStringElementWithNeighborCount(secNeigh, mol) in possible_indirect_pullers
-                tert_neighbors_elements = Vector{String}()
-                for tertNeigh in filter(x -> !(x in neighborhood(mol_graph, num, 2)) && x in neighbors(mol_graph, secNeigh), 
-                                                neighborhood(mol_graph, num, 3))
-                    push!(tert_neighbors_elements, getStringElementWithNeighborCount(tertNeigh, mol))
-                end
-                if true in in(strong_pullers).(tert_neighbors_elements)
-                    elec_pullers_num += 1
-                end
             end
         end
     end
@@ -123,8 +113,8 @@ function atom_conjugated_system_processor(mol::Molecule)
     
     filtered_bonds_df = mol.bonds[(in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a1]) .&&
                                 in([Elements.C, Elements.N, Elements.O, Elements.S, Elements.P]).(mol.atoms.element[mol.bonds.a2]) .&&
-                                !(true in in(aromaticity_array[mol.bonds.a1]).(["AR1","AR2"])) .&& 
-                                !(true in in(aromaticity_array[mol.bonds.a2]).(["AR1","AR2"])) .&& 
+                                !(true in in(aromaticity_array[mol.bonds.a1]).(["AR1","AR2","AR3"])) .&& 
+                                !(true in in(aromaticity_array[mol.bonds.a2]).(["AR1","AR2","AR3"])) .&& 
                                 (mol.bonds.order .== BondOrder.Double .|| mol.bonds.order .== BondOrder.Triple)), :]
     charged_atoms = filter(x -> haskey(mol.atoms[x,:properties], "Charge") && mol.atoms[x,:properties]["Charge"] != Float32(0), mol.atoms.number)
     possible_conjugated_atoms = keys(countmap(vcat(filtered_bonds_df.a1, filtered_bonds_df.a2, charged_atoms), alg=:dict))
