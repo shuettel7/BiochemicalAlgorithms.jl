@@ -88,7 +88,7 @@ function count_EWG(num::Int64, mol::Molecule)
     # Electron withdrawal Atoms (EWG) according to antechamber document are: N, O, F, Cl, and Br
     # which are bound to the immediate neighbour
     # To Do: Test differences for Atom Typing, see below typical know EWG
-    strong_pullers = ["Cl1", "F1", "Br1", "O1", "S1", "O2", "S2", "S3", "S4", "N2", "N3"]
+    strong_pullers = ["Cl1", "F1", "Br1", "I1", "O1", "S1", "O2", "S2", "S3", "S4", "N2", "N3"]
     acceptable_first_neighbors = ["C2", "C3", "C4", "S2", "S3", "S4", "N3", "P3", "P4", "O2"]
     elec_pullers_num = 0
     mol_graph = mol.properties["mol_graph"]
@@ -324,18 +324,21 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
         # AR2 property: has two continuous single bonds
         continuous_single_bonds_num = number_of_continuous_single_bonds_in_ring(vertices_vec, ring_bonds_df)
 
+        # AR5 property: all carbon atoms in ring
+        all_carbon_in_ring = all(in(Elements.C, mol.atoms.element[vertices_vec]))
+
         # conditional cascade for different aromatic types: AR1-5
         if (pi_electrons / lastindex(vertices_vec)) == 1.0 && isempty(double_bond_to_non_ring_atom)
             assign_all_in_vertices_vec_aromaticity_type("AR1", vertices_vec, reduced_vec, atom_ring_class_array)
             @with innerjoin(ring_bonds_df[!,[:a1,:a2]], mol.bonds, on = [:a1, :a2]) begin
                 push!.(:properties, "TRIPOS_tag" => "ar")
             end
-        elseif (pi_electrons / ring_size) == 0
+        elseif (pi_electrons / ring_size) == 0 && all_carbon_in_ring
             assign_all_in_vertices_vec_aromaticity_type("AR5", vertices_vec, reduced_vec, atom_ring_class_array)
         elseif (pi_electrons / ring_size) >= 1/2 && ONSP_present && ring_size > 4 &&
                 isempty(double_bond_to_non_ring_atom) && (continuous_single_bonds_num / ring_size) <= 2/6
             assign_all_in_vertices_vec_aromaticity_type("AR2", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / ring_size) > 0 && !isempty(double_bond_to_non_ring_atom)
+        elseif (pi_electrons / ring_size) >= 1/2 && !isempty(double_bond_to_non_ring_atom)
             assign_all_in_vertices_vec_aromaticity_type("AR3", vertices_vec, reduced_vec, atom_ring_class_array)
         else
             assign_all_in_vertices_vec_aromaticity_type("AR4", vertices_vec, reduced_vec, atom_ring_class_array)

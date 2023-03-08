@@ -11,18 +11,21 @@ function CES_parser(colstring::String, mol::Molecule, sourceAtomNum::Int64)
     
     layers_df = DataFrame([Vector{Int}(), Vector{Int}(), Vector{String}(), Vector{String}(),
                             Vector{Union{Int,String}}(), Vector{String}(), Vector{String}(),  
-                            Vector{Union{Int,String}}(), Vector{Vector{Int}}()],
+                            Vector{Union{Int,String}}(), Vector{Vector{Int}}(), Vector{Union{Int,String}}(),
+                            Vector{Union{Bool,String}}()],
                         ["AtomId", "LayerDepth", "GenericName", "Element", "NumNeighbors", "ElementWithNeighborCount", 
-                            "CES_APS", "SourceRowNum", "ContainsAtomId"])
+                            "CES_APS", "SourceRowNum", "ContainsAtomId", "PathId", "PathVertexBool"])
 
     layer = 0
     layer_id = 0
     in_APS_bool = false
     sourceMolGraph = mol.properties["mol_graph"]
     sourceElemWNeighCount = mol.properties["atmprops_df"][sourceAtomNum, :ElementWithNeighborCount]
+    path_id = 1
+    path_bool = false
     push!(layers_df, (layer, layer_id, "", enumToString(mol.atoms.element[sourceAtomNum]), 
             lastindex(neighbors(sourceMolGraph, sourceAtomNum)), 
-            sourceElemWNeighCount, "", "", []))
+            sourceElemWNeighCount, "", "", [], "", ""))
     
     for (i,strindex) in enumerate(colstring[bracket_logic_list]) 
         if strindex == '['
@@ -33,6 +36,8 @@ function CES_parser(colstring::String, mol::Molecule, sourceAtomNum::Int64)
         if strindex == '(' || (strindex == ',' && !in_APS_bool)
             if strindex == '('
                 layer += 1
+            elseif strindex == ','
+                path_id += 1
             end
             layer_id += 1
             substring = colstring[bracket_logic_list[i]+1:bracket_logic_list[i+1]-1]
@@ -48,7 +53,7 @@ function CES_parser(colstring::String, mol::Molecule, sourceAtomNum::Int64)
             ces_APS_substring = ""
             generic_name = ""
             push!(layers_df, (layer_id, layer, generic_name, curr_element, num_neighbors, 
-                                string(curr_element, num_neighbors), ces_APS_substring, 0, []))
+                                string(curr_element, num_neighbors), ces_APS_substring, 0, [], path_id, path_bool))
             
             owner_layer_df = layers_df[(layers_df.LayerDepth .== layer-1), :]
             layers_df.SourceRowNum[nrow(layers_df)] = owner_layer_df.AtomId[nrow(owner_layer_df)]
@@ -76,7 +81,9 @@ end
 
 
 function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
-    if number_of_ces_paths(CES_df) > lastindex(allPossiblePaths)
+    if !all_paths_true(CES_df)
+        return false
+    elseif number_of_ces_paths(CES_df) > lastindex(allPossiblePaths)
         return false 
     elseif isempty(allPossiblePaths)
         return false
@@ -85,6 +92,11 @@ function path_checker(CES_df::DataFrame, allPossiblePaths::Vector{Vector{Int}})
         return false
     end
     return true
+end
+
+
+function all_paths_true(CES_df::DataFrame)
+    return count(x -> isempty(x), CES_df.ContainsAtomId) == nrow(filter(x -> isempty(x.ContainsAtomId) && x.PathVertexBool == true, CES_df))
 end
 
 
@@ -132,6 +144,7 @@ function path_builder(CES_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPat
     # return if there are no following links in CES
     if isempty(cesRow.ContainsAtomId[1]) && check_Bool
         push!(filtered_atm_paths, atmPath_vec)
+        CES_df.PathVertexBool[cesRow.AtomId[1]+1] = true
         return filtered_atm_paths
     end
 
