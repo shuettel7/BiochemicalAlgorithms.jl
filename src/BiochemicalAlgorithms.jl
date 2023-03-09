@@ -20,7 +20,6 @@ include("core/atomtyping/APS_processor.jl")
 include("core/atomtyping/CES_processor.jl")
 include("core/atomtyping/postprocessing_atomtyping.jl")
 include("validation/validation_script.jl")
-include("validation/atomtypes_dict_script.jl")
 
 module PubChem
 include("fileformats/pubchem_json.jl")

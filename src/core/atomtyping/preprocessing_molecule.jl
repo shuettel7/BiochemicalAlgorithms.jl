@@ -313,7 +313,7 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
             end
         end
         
-        # check number of pi electrons
+        # get number of pi electrons in current cycle
         subVector = copy(vertices_vec)
         shifted_subVector = vcat(subVector[2:lastindex(subVector)], subVector[1])
         ring_bonds_df = innerjoin(DataFrame(:a1 => [subVector; shifted_subVector], :a2 => [shifted_subVector; subVector]), mol.bonds, on = [:a1, :a2])
@@ -338,7 +338,7 @@ function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, m
         elseif (pi_electrons / ring_size) >= 1/2 && ONSP_present && ring_size > 4 &&
                 isempty(double_bond_to_non_ring_atom) && (continuous_single_bonds_num / ring_size) <= 2/6
             assign_all_in_vertices_vec_aromaticity_type("AR2", vertices_vec, reduced_vec, atom_ring_class_array)
-        elseif (pi_electrons / ring_size) >= 1/2 && !isempty(double_bond_to_non_ring_atom)
+        elseif (pi_electrons / ring_size) > 0 && !isempty(double_bond_to_non_ring_atom) # TODO: hybridization data needed to differentiate from AR4, AR3: sp2-hyb. required
             assign_all_in_vertices_vec_aromaticity_type("AR3", vertices_vec, reduced_vec, atom_ring_class_array)
         else
             assign_all_in_vertices_vec_aromaticity_type("AR4", vertices_vec, reduced_vec, atom_ring_class_array)

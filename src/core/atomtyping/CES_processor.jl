@@ -30,7 +30,7 @@ function CES_parser(colstring::String, mol::Molecule, sourceAtomNum::Int64)
     for (i,strindex) in enumerate(colstring[bracket_logic_list]) 
         if strindex == '['
             in_APS_bool = true
-        elseif strindex == ']' || strindex == '('
+        elseif strindex == ']' || strindex == '(' || in(bracket_logic_list[i-1], ['(',','])
             in_APS_bool = false
         end
         if strindex == '(' || (strindex == ',' && !in_APS_bool)
@@ -151,9 +151,12 @@ function path_builder(CES_df::DataFrame, previousCesAtomIds::Vector{Int}, atmPat
     # start next instance of function if path is correct so far
     if check_Bool
         # List of current neighbor atoms at certain depth/distance from source 
-        curr_atm_neighbors = filter(x -> !(x in neighborhood(mol_graph, absSourceAtm, depth)) && 
-                                    x in neighbors(mol_graph, curr_atom), 
-                                    neighborhood(mol_graph, absSourceAtm, depth+1))
+        curr_atm_neighbors = filter(x -> x != previous_atom, neighbors(mol_graph, curr_atom))
+        ### for a tree-like structure that "splits" rings, use the following filter function
+        ### instead of the above with curr_atom_neighbors.
+        # filter(x -> !(x in neighborhood(mol_graph, absSourceAtm, depth)) && 
+                                    # x in neighbors(mol_graph, curr_atom), 
+                                    # neighborhood(mol_graph, absSourceAtm, depth+1))
         nextCesAtomId_array = CES_df[(CES_df.AtomId .== previousCesAtomIds[lastindex(previousCesAtomIds)]), :ContainsAtomId][1]
         for atm_neigh in curr_atm_neighbors
             for nextCesAtom in nextCesAtomId_array
