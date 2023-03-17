@@ -53,7 +53,6 @@ function PreprocessingMolecule!(mol::Molecule)
     end
 
     ### add further fields to atom properties
-    ElemWNeighbourCount_vector = @with mol.atoms @byrow string(enumToString(:element), lastindex(neighbors(mol_graph, :number)))
     @with mol.atoms @byrow push!(:properties, 
                         "ElementWithNeighborCount" => getStringElementWithNeighborCount(:number, mol),
                         "Neighbors" => neighbors(mol_graph, :number), 
@@ -248,7 +247,6 @@ end
 
 
 function atom_aromaticity_type_processor(allCycles_vec::Vector{Vector{Int64}}, mol::Molecule)
-    mol_graph = mol.properties["mol_graph"]
     atom_ring_class_array = Vector{Vector{String}}(undef, nrow(mol.atoms))
     reduced_vec = isempty(allCycles_vec) ? Vector{Int}() : reduce(vcat, allCycles_vec)
     for i = (1:nrow(mol.atoms))
