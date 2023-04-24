@@ -2,7 +2,13 @@ using BiochemicalAlgorithms, DataFrames, BenchmarkTools
 
 export export_all_gaff_paper_files_to_mol2, export_all_pdb_test_files_to_mol2, compare_mol_antechamber_to_balljl, load_multiCompound_pubchem_json_and_export_to_mol2, 
     export_all_from_directory_with_gaff, export_all_from_directory, atomtype_comparison, count_assigned_properties, count_assigned_property_fields, 
-    load_all_gaff_paper_files, run_atomtyping_on_gaff_paper_files, atomtype_all_gaff_mol2_files, load_all_from_directory, benchmark_all_def_files
+    load_all_gaff_paper_files, run_atomtyping_on_gaff_paper_files, atomtype_all_gaff_mol2_files, load_all_from_directory, benchmark_all_def_files, print_table_PubChem_ids
+
+function print_table_PubChem_ids(folder::String)
+    for filename in sort(readdir(folder))
+        println(filename[1:findfirst('_', filename)-1], " & ", filename[findlast('_', filename)+1:findlast('.', filename)-1], " \\\\")
+    end
+end
 
 
 function benchmark_all_def_files()
@@ -10,11 +16,13 @@ function benchmark_all_def_files()
     def_vec = ["DU", "SYBYL", "GFF", "AMBER"]
     FDA_mol2_path = "../huettel-msc/FDA_PubChem_category_mol2_files/"
     benchmarks_path = string(FDA_mol2_path, "benchmarks/")
+    export_all_from_directory("../huettel-msc/extended_test_cases/", "../huettel-msc/extended_test_cases/", string(data_folder, "DU.DEF"))
     for def in def_vec
         println(def)
         deffile = string(data_folder, def, ".DEF")
         export_to_folder = string(benchmarks_path, def, "/")
-        @btime export_all_from_directory($FDA_mol2_path, $export_to_folder, $deffile)
+        bench = @benchmarkable export_all_from_directory($FDA_mol2_path, $export_to_folder, $deffile)
+        display(run(bench, samples = 7, seconds = 120))
     end
 end
 
